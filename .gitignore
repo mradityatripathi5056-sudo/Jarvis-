@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+*.log
+logs/
+jarvis_history.json
+.DS_Store
+Thumbs.db
