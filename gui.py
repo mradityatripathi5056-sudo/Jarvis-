@@ -9,6 +9,7 @@ import threading
 import time
 import queue
 import logging
+import re
 import tkinter as tk
 from tkinter import scrolledtext, font as tkfont
 from datetime import datetime
@@ -36,6 +37,10 @@ is_muted = False
 # actions cancel kar deta hai (jo action already chal chuka hai wo ruk nahi
 # sakta, lekin agla nahi chalega).
 stop_event = threading.Event()
+
+# Pichla destructive/self-upgrade action jiske liye confirmation maangi gayi
+# thi (jab tak user "haan"/"yes" na bole, ye set rehta hai).
+_pending_confirm = {"action": None, "params": None}
 
 # ---- Iron Man HUD color palette ----
 BG_DARK = "#04070c"
@@ -309,7 +314,32 @@ def process_command_thread(text: str):
 
 
 def handle_command(user_text: str, speak_output: bool = True) -> str:
+    global _pending_confirm
     stop_event.clear()
+
+    # Pichli baar koi destructive/self-upgrade action confirm karne ke liye
+    # pucha gaya tha - to iss baar jo bhi bola/type kiya gaya hai (chahe
+    # voice se ho ya text box se) wahi uska jawab maana jaayega.
+    if _pending_confirm["action"]:
+        action_name = _pending_confirm["action"]
+        params = _pending_confirm["params"]
+        _pending_confirm = {"action": None, "params": None}
+
+        lowered = user_text.strip().lower()
+        confirmed = re.search(r"\b(haan|ha|yes|yeah|yup|sure|ok|okay)\b", lowered) is not None
+
+        if not confirmed:
+            result_text = "Theek hai, cancel kar diya."
+        else:
+            func = actions.ACTION_MAP.get(action_name)
+            if func:
+                result_text = actions.run_action_with_retry(func, params, action_name)
+            else:
+                result_text = f"'{action_name}' command samajh nahi aaya."
+
+        brain.save_action_results([result_text])
+        return result_text
+
     action_list = brain.ask_llm(user_text)
     results = []
 
@@ -326,12 +356,9 @@ def handle_command(user_text: str, speak_output: bool = True) -> str:
             continue
 
         if action_name in config.DESTRUCTIVE_ACTIONS:
-            ui_queue.put(("jarvis_said", f"Kya aap sure hain {action_name} karna hai? Haan ya Nahi boliye."))
-            speak(f"Kya aap sure hain {action_name} karna hai? Haan ya Nahi boliye.")
-            confirm_text = listen(timeout=5, phrase_time_limit=3)
-            if stop_event.is_set() or not ("haan" in confirm_text or "yes" in confirm_text):
-                results.append("Theek hai, cancel kar diya.")
-                continue
+            _pending_confirm = {"action": action_name, "params": params}
+            results.append(f"Kya aap sure hain {action_name} karna hai? Haan ya Nahi boliye.")
+            break  # agla jo bhi bolo/type karo, wahi confirmation ka jawab maana jaayega
 
         func = actions.ACTION_MAP.get(action_name)
         if func:

@@ -1387,19 +1387,30 @@ def bluetooth_control(params: dict) -> str:
         if system == "Windows":
             # Windows ke built-in "Windows.Devices.Radios" WinRT API se
             # Bluetooth radio ko seedha on/off kiya ja sakta hai - bina
-            # settings page khole. Ye Windows 10/11 pe kaam karta hai,
-            # koi extra tool/install nahi chahiye.
+            # settings page khole. WinRT ke async operations (IAsyncOperation)
+            # PowerShell mein seedha .GetAwaiter() support nahi karte - isliye
+            # System.Runtime.WindowsRuntime ke "AsTask" bridge se .NET Task
+            # mein convert karke wait karna padta hai (Await helper neeche).
             ps_state = "On" if turn_on else "Off"
             ps_script = (
                 "[Windows.Devices.Radios.Radio,Windows.System.Devices,"
                 "ContentType=WindowsRuntime] | Out-Null; "
                 "[Windows.Devices.Radios.RadioAccessStatus,Windows.System.Devices,"
                 "ContentType=WindowsRuntime] | Out-Null; "
-                "$radios = [Windows.Devices.Radios.Radio]::GetRadiosAsync().GetAwaiter().GetResult(); "
+                "Add-Type -AssemblyName System.Runtime.WindowsRuntime; "
+                "$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | "
+                "Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and "
+                "$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]; "
+                "function Await($WinRtTask, $ResultType) { "
+                "$asTask = $asTaskGeneric.MakeGenericMethod($ResultType); "
+                "$netTask = $asTask.Invoke($null, @($WinRtTask)); "
+                "$netTask.Wait(-1) | Out-Null; return $netTask.Result }; "
+                "$radios = Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) "
+                "([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]]); "
                 "$bt = $radios | Where-Object { $_.Kind -eq 'Bluetooth' }; "
                 "if ($bt) { "
-                f"$bt.SetStateAsync([Windows.Devices.Radios.RadioState]::{ps_state}).GetAwaiter().GetResult() "
-                "| Out-Null; exit 0 "
+                f"Await ($bt.SetStateAsync([Windows.Devices.Radios.RadioState]::{ps_state})) "
+                "([Windows.Devices.Radios.RadioAccessStatus]) | Out-Null; exit 0 "
                 "} else { exit 2 }"
             )
             result = subprocess.run(
@@ -1409,7 +1420,13 @@ def bluetooth_control(params: dict) -> str:
             if result.returncode == 0:
                 return f"Bluetooth {'on' if turn_on else 'off'} kar diya."
             # Fallback - agar WinRT toggle kisi wajah se fail ho jaaye
-            # (purana Windows build, driver issue, etc.) to settings khol do.
+            # (purana Windows build, driver issue, koi bluetooth radio hi
+            # na mila, etc.) to settings khol do aur error bhi log karo
+            # taaki debug ho sake.
+            logging.error(
+                f"bluetooth_control WinRT toggle fail (code {result.returncode}): "
+                f"{result.stderr.strip()[:300]}"
+            )
             os.startfile("ms-settings:bluetooth")
             return (
                 "Bluetooth seedha toggle nahi kar paya, isliye settings khol di - "
