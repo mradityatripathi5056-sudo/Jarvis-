@@ -56,6 +56,12 @@ ultralytics==8.3.28
 #   pip install opencv-contrib-python
 opencv-contrib-python==4.10.0.84
 
+# Telegram voice note support (bot ko voice message bhejo, text mein convert
+# hoke command chalegi) - iske alawa system pe ffmpeg bhi install hona zaroori
+# hai (https://ffmpeg.org/download.html - Windows pe zip download karke uska
+# bin folder PATH mein daalo)
+pydub==0.25.1
+
 # API Integrations
 spotipy==2.24.0
 PyGithub==2.4.0
