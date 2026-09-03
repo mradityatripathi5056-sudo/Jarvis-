@@ -94,7 +94,19 @@ _CHANGE_PIN_RE = re.compile(
 )
 
 
-def _allowed_chat_ids() -> set:
+def _open_access_enabled() -> bool:
+    """True sirf tab jab .env mein explicitly TELEGRAM_OPEN_ACCESS=true ho.
+    Jab ye ON hai, TELEGRAM_CHAT_ID/TELEGRAM_ALLOWED_CHAT_IDS blank chhod
+    sakte ho - phir koi bhi jisko bot ka username pata hai wo message
+    bhej sakega. PIN gate (login + har destructive action) phir bhi lagi
+    rahegi, lekin agar UNIVERSAL_PIN kisi tarah leak ho gaya to koi bhi
+    poora laptop control kar sakta hai. Sirf tabhi ON karo jab sach mein
+    zaroorat ho."""
+    return os.getenv("TELEGRAM_OPEN_ACCESS", "false").strip().lower() == "true"
+
+
+def _is_chat_allowed(chat_id: str, allowed_ids: set) -> bool:
+    return _open_access_enabled() or chat_id in allowed_ids
     """Kaun kaun se chat_id se command allowed hai. Default: sirf
     TELEGRAM_CHAT_ID. Chaho to .env mein TELEGRAM_ALLOWED_CHAT_IDS=id1,id2
     daal ke multiple trusted chats bhi allow kar sakte ho (jaise apna phone
@@ -210,7 +222,7 @@ def _poll_once(allowed_ids: set) -> None:
         if not text:
             continue
 
-        if chat_id not in allowed_ids:
+        if not _is_chat_allowed(chat_id, allowed_ids):
             # Trusted list se bahar ka koi bhi message chupchaap ignore -
             # isse laptop sirf tumhare (ya explicitly allow kiye gaye) chat se
             # control hota hai.
@@ -268,16 +280,23 @@ def run_forever() -> None:
         return
 
     allowed_ids = _allowed_chat_ids()
-    if not allowed_ids:
+    open_access = _open_access_enabled()
+    if not allowed_ids and not open_access:
         print(
             "Koi allowed chat_id nahi mila (.env mein TELEGRAM_CHAT_ID ya "
-            "TELEGRAM_ALLOWED_CHAT_IDS set karo) - safety ke liye listener band hai."
+            "TELEGRAM_ALLOWED_CHAT_IDS set karo, ya jaan-boojh kar sabke liye "
+            "kholna hai to TELEGRAM_OPEN_ACCESS=true set karo) - safety ke "
+            "liye listener band hai."
         )
         return
 
     print("=" * 50)
     print("JARVIS TELEGRAM COMMAND LISTENER STARTED")
-    print(f"Allowed chat id(s): {', '.join(allowed_ids)}")
+    if open_access:
+        print("⚠️  OPEN ACCESS ON - koi bhi jisko bot ka username pata hai wo")
+        print("    message bhej sakta hai. Sirf PIN hi ab suraksha hai.")
+    else:
+        print(f"Allowed chat id(s): {', '.join(allowed_ids)}")
     print("Bot ko PIN bhejke login karo, uske baad jo bhi command bhejoge laptop pe execute hoga.")
     print("=" * 50)
     for cid in allowed_ids:
@@ -298,7 +317,7 @@ def start_background() -> threading.Thread | None:
         import telegram_command_listener
         telegram_command_listener.start_background()
     """
-    if not config.TELEGRAM_BOT_TOKEN or not _allowed_chat_ids():
+    if not config.TELEGRAM_BOT_TOKEN or not (_allowed_chat_ids() or _open_access_enabled()):
         return None
     t = threading.Thread(target=run_forever, daemon=True)
     t.start()

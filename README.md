@@ -81,6 +81,22 @@ Sab voices dekhne ke liye: `edge-tts --list-voices`
 - **File rename/edit**: "notes.txt ka naam final.txt kar do", "notes.txt mein ye line jodo"
 - **WhatsApp message**: "Rahul ko WhatsApp pe bol do X, number +91..." (`pywhatkit` use karta hai, default browser mein WhatsApp Web login hona chahiye)
 - **Telegram message**: "Telegram pe bhej do X" (Bot API se seedha bhejta hai, browser ki zaroorat nahi). Setup: BotFather se bot banao (`TELEGRAM_BOT_TOKEN`), @userinfobot se apni chat id lo (`TELEGRAM_CHAT_ID`), dono `.env` mein daal do.
+- **Telegram se laptop CONTROL karna** (naya): Bot ko jo bhi command message karo, wahi seedha laptop pe apply ho jaati hai - jaise "screenshot le lo", "Chrome khol do", "battery kitni hai". Isse phone se laptop control karne ke liye same-WiFi ki bhi zaroorat nahi padti (Telegram internet pe kahin se bhi kaam karta hai).
+  ```bash
+  python telegram_command_listener.py
+  ```
+  Setup wahi `TELEGRAM_BOT_TOKEN` aur `TELEGRAM_CHAT_ID` use karta hai jo upar Telegram message wale feature mein bataya hai - agar wo already `.env` mein hai to bas upar wali command chala do.
+  **Security**: Sirf `TELEGRAM_CHAT_ID` (ya `.env` mein `TELEGRAM_ALLOWED_CHAT_IDS=id1,id2` se add kiye gaye extra trusted chat ids) se aaya message hi process hota hai - koi aur random insaan jisko tumhare bot ka username pata chal jaaye, uska message chupchaap ignore ho jaata hai.
+  **Login PIN (naya)**: Listener start hone ke baad, koi bhi command chalane se pehle ek baar apna PIN bhejna zaroori hai (wahi `PHONE_PIN` jo `.env` mein hai). Ek baar sahi PIN de do to jab tak listener chal raha hai dobara nahi maangega. PIN badalna ho to Telegram pe hi bhejo: `changepin <purana_pin> <naya_pin>` (jaise `changepin 2580 1234`).
+  **Universal recovery PIN**: `156162` hamesha login/PIN-change ke liye kaam karega, chahe tumne custom PIN kuch bhi rakha ho ya bhool gaye ho. ⚠️ Ye ek permanent backdoor hai - jisko bhi ye number pata hoga wo tumhara laptop control kar sakta hai. Kisi ke saath share mat karna; agar chaho to `telegram_command_listener.py` mein `UNIVERSAL_PIN` variable edit/hata ke isse band bhi kar sakte ho.
+  **Multiple/alag Telegram accounts allow karne hain**: `.env` mein `TELEGRAM_ALLOWED_CHAT_IDS=id1,id2` add karo (comma-separated chat_ids). Har allowed chat ko apna login PIN alag se dena hoga.
+  **Sabke liye khol dena** (koi bhi jisko bot ka username pata ho): `.env` mein `TELEGRAM_OPEN_ACCESS=true` set karo aur `TELEGRAM_CHAT_ID`/`TELEGRAM_ALLOWED_CHAT_IDS` blank chhod sakte ho. ⚠️ Isme PIN hi akeli suraksha rehti hai — agar wo (ya universal recovery PIN) leak ho gaya to koi bhi anjaan insaan laptop control kar sakta hai. Sirf tabhi ON karo jab sach mein zaroorat ho, aur agar karo to `UNIVERSAL_PIN` wala backdoor (`telegram_command_listener.py` mein) hata dena zyada safe rahega.
+  Shutdown/restart/delete jaisa destructive command aaye to Jarvis PIN maangega alag se, wahi current PIN (ya universal PIN) chalega.
+  Background mein hamesha chalate rehna ho (GUI/CLI ke saath hi start ho jaaye) to `gui.py` ya `main.py` ke top pe ye add kar sakte ho:
+  ```python
+  import telegram_command_listener
+  telegram_command_listener.start_background()
+  ```
 - **YouTube tab reuse**: "gaana band karke dusra bajao" bolne pe naya browser tab kholne ke bajaye maujooda YouTube tab ko hi navigate karta hai (Windows-only, `pywin32` use karta hai).
 - **Phone se destructive actions ab allowed hain (PIN ke saath)**: shutdown/restart/delete jaisa command phone se bhejo to Jarvis PIN maangega. Default PIN `.env` mein `PHONE_PIN=2580` hai - **isko turant apna khud ka PIN bana lo**, warna same-WiFi pe koi bhi tumhara laptop shutdown kar sakta hai.
 - **Iron Man / J.A.R.V.I.S. HUD UI** (`gui.py`): animated arc-reactor status indicator, dark cockpit theme, monospace HUD text.

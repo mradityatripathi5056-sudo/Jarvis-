@@ -12,5 +12,9 @@ logs/
 jarvis_history.json
 whatsapp_browser_profile/
 telegram_contacts.json
+jarvis_memory.json
+jarvis_notes.txt
+telegram_command_pin.json
+telegram_command_offset.json
 .DS_Store
 Thumbs.db
