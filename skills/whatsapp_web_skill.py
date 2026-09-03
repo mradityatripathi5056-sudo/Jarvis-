@@ -25,24 +25,9 @@ PEHLI BAAR:
 LIMITATION: WhatsApp Web apna HTML/CSS structure kabhi-kabhi badalta
 rehta hai, isliye agar Meta kuch UI update kare to selectors yahan
 bhi update karne padenge (error message mein clue mil jayega).
-
-THREADING/ASYNCIO FIX (zaroor padhna):
-Pehle ye module seedha apne calling thread (jaise Telegram listener
-wala thread) se Playwright chalata tha - agar wo thread kabhi bhi
-(ab ya future mein) asyncio ke andar se call hota hai (jaise TTS wali
-async_generate() ke through), Playwright error deta hai: "It looks
-like you are using Playwright Sync API inside the asyncio loop."
-Ab, youtube_control_skill.py jaisa hi, saare Playwright calls
-`browser_worker.run_in_browser_thread(...)` ke zariye ek hi fixed,
-plain (non-async) background thread mein bhejte hain - us thread mein
-kabhi kuch aur (TTS, asyncio) nahi chalta, isliye ye error kabhi
-nahi aayega, chahe command kisi bhi thread (GUI, Telegram, phone) se
-aaye.
 """
 
 import os
-
-from browser_worker import run_in_browser_thread
 
 _PROFILE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "whatsapp_browser_profile"
@@ -53,9 +38,6 @@ _page = None
 
 
 def _ensure_page():
-    """IMPORTANT: ye function hamesha browser-worker thread ke andar hi
-    call hona chahiye (run_in_browser_thread ke through) - kabhi bhi
-    seedha kisi caller thread se mat bulao."""
     global _context, _page
     if _page is not None:
         try:
@@ -104,7 +86,7 @@ def _open_chat_by_name(page, name: str) -> bool:
 def whatsapp_open(params: dict) -> str:
     """WhatsApp Web kholta hai. Pehli baar QR scan karna hoga phone se."""
     try:
-        run_in_browser_thread(_ensure_page)
+        _ensure_page()
         return "WhatsApp Web khol diya. Agar QR code dikhe to phone se scan kar lo."
     except Exception as e:
         return f"WhatsApp Web nahi khul saka: {e}"
@@ -116,8 +98,7 @@ def send_whatsapp_message_by_name(params: dict) -> str:
     message = params.get("message", "").strip()
     if not name or not message:
         return "Kisko aur kya message bhejna hai, dono batao."
-
-    def _job():
+    try:
         page = _ensure_page()
         if not _open_chat_by_name(page, name):
             return f"'{name}' naam ka contact WhatsApp mein nahi mila - naam check karo."
@@ -129,9 +110,6 @@ def send_whatsapp_message_by_name(params: dict) -> str:
         box.type(message, delay=15)
         page.keyboard.press("Enter")
         return f"'{name}' ko WhatsApp pe message bhej diya."
-
-    try:
-        return run_in_browser_thread(_job)
     except Exception as e:
         return f"Message nahi bhej saka: {e}"
 
@@ -141,8 +119,7 @@ def whatsapp_voice_call(params: dict) -> str:
     name = params.get("name", "").strip()
     if not name:
         return "Kisko call karna hai, naam batao."
-
-    def _job():
+    try:
         page = _ensure_page()
         if not _open_chat_by_name(page, name):
             return f"'{name}' naam ka contact WhatsApp mein nahi mila."
@@ -153,9 +130,6 @@ def whatsapp_voice_call(params: dict) -> str:
         )
         btn.click()
         return f"'{name}' ko WhatsApp voice call kar raha hoon."
-
-    try:
-        return run_in_browser_thread(_job)
     except Exception as e:
         return f"Call nahi ho saka (WhatsApp ka UI update ho sakta hai): {e}"
 
@@ -165,8 +139,7 @@ def whatsapp_video_call(params: dict) -> str:
     name = params.get("name", "").strip()
     if not name:
         return "Kisko video call karna hai, naam batao."
-
-    def _job():
+    try:
         page = _ensure_page()
         if not _open_chat_by_name(page, name):
             return f"'{name}' naam ka contact WhatsApp mein nahi mila."
@@ -177,61 +150,21 @@ def whatsapp_video_call(params: dict) -> str:
         )
         btn.click()
         return f"'{name}' ko WhatsApp video call kar raha hoon."
-
-    try:
-        return run_in_browser_thread(_job)
     except Exception as e:
         return f"Video call nahi ho saka (WhatsApp ka UI update ho sakta hai): {e}"
 
 
 def whatsapp_close(params: dict) -> str:
     """WhatsApp Web ka browser band kar deta hai (session profile mein save rehta hai)."""
-
-    def _job():
-        global _context, _page
-        try:
-            if _context:
-                _context.close()
-        except Exception:
-            pass
-        _context = None
-        _page = None
-        return "WhatsApp Web band kar diya."
-
+    global _context, _page
     try:
-        return run_in_browser_thread(_job)
-    except Exception as e:
-        return f"Band karte waqt error: {e}"
-
-
-def get_last_whatsapp_reply(params: dict) -> str:
-    """Chalu (ya di gayi naam ki) WhatsApp chat ka SABSE NAYA aaya hua
-    (incoming) message padh kar text ke roop mein return karta hai -
-    isse Jarvis bol/bata sakta hai 'kya reply aaya hai'."""
-    name = params.get("name", "").strip()
-
-    def _job():
-        page = _ensure_page()
-        if name:
-            if not _open_chat_by_name(page, name):
-                return f"'{name}' naam ka contact WhatsApp mein nahi mila."
-        page.wait_for_timeout(500)
-        bubbles = page.query_selector_all("div.message-in")
-        if not bubbles:
-            return "Is chat mein koi incoming message nahi mila."
-        last = bubbles[-1]
-        text_el = last.query_selector("span.selectable-text") or last.query_selector(
-            ".copyable-text"
-        )
-        text = (text_el.inner_text() if text_el else last.inner_text()).strip()
-        if not text:
-            return "Naya reply text nahi tha (photo/voice note/sticker ho sakta hai)."
-        return f"Naya reply aaya hai: {text}"
-
-    try:
-        return run_in_browser_thread(_job)
-    except Exception as e:
-        return f"Reply padhne mein error: {e}"
+        if _context:
+            _context.close()
+    except Exception:
+        pass
+    _context = None
+    _page = None
+    return "WhatsApp Web band kar diya."
 
 
 ACTIONS = {
@@ -240,7 +173,6 @@ ACTIONS = {
     "whatsapp_voice_call": whatsapp_voice_call,
     "whatsapp_video_call": whatsapp_video_call,
     "whatsapp_close": whatsapp_close,
-    "get_last_whatsapp_reply": get_last_whatsapp_reply,
 }
 
 DOCS = """
@@ -250,9 +182,6 @@ DOCS = """
 - whatsapp_voice_call: {"name": "Rohit"}  (WhatsApp voice call start karta hai)
 - whatsapp_video_call: {"name": "Rohit"}  (WhatsApp video call start karta hai)
 - whatsapp_close: {}  (WhatsApp Web browser band karo)
-- get_last_whatsapp_reply: {"name": "Rohit"}  (naam optional - na do to jo chat
-    abhi khuli hai usी ka sabse naya aaya (incoming) message padh ke batata hai.
-    Trigger: "reply aaya kya", "kya bola usne", "naya message padho")
 
 Example:
 User: "Rohit ko WhatsApp pe bhejo ki main late hoon"
@@ -260,7 +189,4 @@ User: "Rohit ko WhatsApp pe bhejo ki main late hoon"
 
 User: "Rohit ko whatsapp pe call karo"
 -> {"actions": [{"action": "whatsapp_voice_call", "params": {"name": "Rohit"}}]}
-
-User: "reply do" / "Rohit ne kya reply kiya"
--> {"actions": [{"action": "get_last_whatsapp_reply", "params": {"name": "Rohit"}}]}
 """

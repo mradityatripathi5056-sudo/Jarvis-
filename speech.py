@@ -134,66 +134,6 @@ def _speak_edge(text: str) -> bool:
         return False
 
 
-def transcribe_audio_file(path: str, language: str = "hi-IN") -> str:
-    """Kisi audio FILE (jaise Telegram se aaya voice message) ko text mein
-    convert karta hai - mic se live sunne wale listen() se alag, ye disk
-    pe padi hui file ke liye hai. Agar file .wav nahi hai (jaise Telegram
-    ka .ogg), pehle ffmpeg se .wav mein convert karta hai - isliye ffmpeg
-    system PATH mein installed hona zaroori hai."""
-    wav_path = path
-    temp_wav = None
-    if not path.lower().endswith(".wav"):
-        temp_wav = os.path.join(tempfile.gettempdir(), "jarvis_incoming_voice.wav")
-        try:
-            import subprocess
-
-            result = subprocess.run(
-                ["ffmpeg", "-y", "-i", path, temp_wav],
-                capture_output=True,
-                timeout=30,
-            )
-            if result.returncode != 0:
-                return ""
-            wav_path = temp_wav
-        except FileNotFoundError:
-            print("[ffmpeg nahi mila - voice message text mein convert nahi ho saka]")
-            return ""
-        except Exception as e:
-            print(f"[Audio convert error]: {e}")
-            return ""
-
-    try:
-        with sr.AudioFile(wav_path) as source:
-            audio = recognizer.record(source)
-        return recognizer.recognize_google(audio, language=language).lower()
-    except sr.UnknownValueError:
-        return ""
-    except Exception as e:
-        print(f"[Voice file transcribe error]: {e}")
-        return ""
-    finally:
-        if temp_wav:
-            try:
-                os.remove(temp_wav)
-            except OSError:
-                pass
-
-
-def synthesize_to_file(text: str, out_path: str) -> bool:
-    """speak() jaisa hi, lekin speaker pe bajane ke bajaye ek audio FILE
-    mein save karta hai (Telegram ko voice reply bhejne ke liye)."""
-    try:
-        async def _generate():
-            communicate = edge_tts.Communicate(text, config.TTS_VOICE)
-            await communicate.save(out_path)
-
-        asyncio.run(_generate())
-        return True
-    except Exception as e:
-        print(f"[TTS file save error]: {e}")
-        return False
-
-
 def speak(text: str):
     stop_speaking_event.clear()
     print(f"[Jarvis]: {text}")

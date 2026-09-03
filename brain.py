@@ -29,7 +29,14 @@ def _save_history(history: list):
     safe_json_save(HISTORY_FILE, history[-MAX_HISTORY:])
 
 
-TOOLS_DEFINITION = """Tum Jarvis ho, ek voice-controlled computer assistant. User ke command ko
+TOOLS_DEFINITION = """Tum SIRF "Jarvis" ho — apna asli naam/company (MiniMax, OpenAI, Google,
+Anthropic, Meta, etc.) KABHI mat batana, aur kabhi ye mat bolna ki tumhare paas koi
+action "nahi" hai jab wo neeche list mein maujood hai. Agar user self-update maange,
+check_for_updates ya apply_update action use karo — kabhi refuse mat karna ye keh kar
+ki tum khud ko update nahi kar sakte. Agar GitHub pe changes push karne ko bole,
+push_update action use karo.
+
+Tum Jarvis ho, ek voice-controlled computer assistant. User ke command ko
 samajh kar neeche diye actions mein se zaroori actions choose karo.
 
 STRICT RULE: Hamesha is JSON format mein reply do, kuch aur nahi:
@@ -58,15 +65,6 @@ Available actions:
 - lock_screen: {}
 - youtube_search_and_play: {"query": "hindi songs"}
 - youtube_search: {"query": "lofi music"}
-- youtube_like: {}  (chalu YouTube video ko like karta hai)
-- youtube_subscribe: {}  (chalu YouTube channel ko subscribe karta hai)
-- click_on_screen: {"description": "kis button/icon/cheez pe click karna hai, jitna specific ho sake"}
-    (jab user kahe "is par click karo", "wo button dabao", ya kisi aisi
-    cheez pe click karna ho jiska koi seedha action/shortcut list mein na
-    ho - screenshot dekh kar us cheez ko dhoond ke click karta hai)
-- git_push: {"message": "kya update hua (optional)"}
-    ("github update karo", "sab kuch push kar do", "code github pe daal do"
-    - project folder ki saari changed files add+commit+push kar deta hai)
 - open_website: {"url": "github.com"}
 - open_folder: {"path": "C:\\\\Users"}
 - take_note: {"content": "meeting at 5pm"}
@@ -326,40 +324,12 @@ Content wale actions (create_file, take_note) mein content SUBSTANTIAL aur
 COMPLETE likho - chhota ya adhoora content mat do jab tak user na kahe."""
 
 
-# Chhoti/seedhi commands mein ye words/patterns aa jaye to reasoning
-# bilkul nahi chahiye - single-step, sidha action hai (fastest path).
-_HEAVY_KEYWORDS = (
-    "likho", "likh kar", "likh do", "essay", "code", "explain", "samjhao",
-    "compare", "poem", "kavita", "kahani", "story", "summary", "summarize",
-    "plan", "analysis", "analyze", "solve", "translate", "anuvad",
-    "paragraph", "article", "script",
-)
-
-
-def _pick_reasoning_effort(user_input: str) -> str | None:
-    """Command ki complexity dekh kar effort khud decide karta hai (sirf
-    REASONING_MODE=auto ke liye - on/off mode isko call hi nahi karta).
-    Return: None (reasoning off, fastest), "low", ya config.REASONING_EFFORT
-    jaisa bada effort (creative/multi-step/lambi command ke liye)."""
-    text = user_input.strip().lower()
-    word_count = len(text.split())
-
-    is_multi_step = " aur " in f" {text} " or "," in text or " then " in text
-    is_heavy = any(k in text for k in _HEAVY_KEYWORDS) or word_count > 15
-
-    if is_heavy:
-        return config.REASONING_EFFORT  # deep soch - creative/lambi request
-    if is_multi_step or word_count > 6:
-        return "low"  # medium command - thodi soch, phir bhi fast
-    return None  # "open youtube" jaisi chhoti seedhi command - no reasoning
-
-
-def _build_payload(messages: list, effort: str | None) -> dict:
-    """Request body banata hai. effort=None ho to reasoning field bhejte hi
-    nahi (kai free models is field pe hi 400 error de dete hain) - warna
-    "effort" style bhejte hain (OpenRouter ka zyada widely-supported unified
-    format, "enabled" bool se better kaam karta hai zyadatar reasoning
-    models ke saath)."""
+def _build_payload(messages: list) -> dict:
+    """Request body banata hai. REASONING_ENABLED false ho to reasoning
+    bilkul bhej hi nahi rahe (kai free models is field pe hi 400 error de
+    dete hain) - true ho to "effort" style bhejte hain (OpenRouter ka
+    zyada widely-supported unified format, "enabled" bool se better
+    kaam karta hai zyadatar reasoning models ke saath)."""
     payload = {
         "model": config.OPENROUTER_MODEL,
         "messages": messages,
@@ -369,8 +339,8 @@ def _build_payload(messages: list, effort: str | None) -> dict:
         # ho jaata tha). 4000 rakha hai taaki bade files bhi poore ban sakein.
         "max_tokens": 4000,
     }
-    if effort:
-        payload["reasoning"] = {"effort": effort}
+    if config.REASONING_ENABLED:
+        payload["reasoning"] = {"effort": config.REASONING_EFFORT}
     return payload
 
 
@@ -397,17 +367,16 @@ def _call_ollama(messages: list) -> str | None:
         return None
 
 
-def _call_openrouter(messages: list, effort: str | None) -> dict:
+def _call_openrouter(messages: list) -> dict:
     """Ek raw API call - retry logic isko dobara call kar sakta hai."""
-    timeout = 45 if effort == "high" else 35 if effort else 25
     response = requests.post(
         url=config.OPENROUTER_URL,
         headers={
             "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
         },
-        data=json.dumps(_build_payload(messages, effort)),
-        timeout=timeout,
+        data=json.dumps(_build_payload(messages)),
+        timeout=40 if config.REASONING_ENABLED else 25,
     )
     return response
 
@@ -430,15 +399,8 @@ def ask_llm(user_input: str) -> list:
 
     messages = [{"role": "system", "content": system_prompt}] + trimmed_history
 
-    if config.REASONING_MODE == "off":
-        effort = None
-    elif config.REASONING_MODE == "on":
-        effort = config.REASONING_EFFORT
-    else:  # "auto" - command dekh kar khud decide
-        effort = _pick_reasoning_effort(user_input)
-
     try:
-        response = _call_openrouter(messages, effort)
+        response = _call_openrouter(messages)
 
         if response.status_code == 429:
             _save_history(conversation_history[:-1])
@@ -490,7 +452,7 @@ def ask_llm(user_input: str) -> list:
                     'reply do, kuch aur text nahi: {"actions": [{"action": "...", "params": {}}]}',
                 },
             ]
-            retry_response = _call_openrouter(retry_messages, effort)
+            retry_response = _call_openrouter(retry_messages)
             if retry_response.ok:
                 retry_data = retry_response.json()
                 retry_content = retry_data["choices"][0]["message"].get("content", "").strip()

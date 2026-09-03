@@ -20,29 +20,18 @@ if not OPENROUTER_API_KEY:
         "aur usme apni real key daalo: OPENROUTER_API_KEY=sk-or-v1-xxxxx"
     )
 
-# REASONING_MODE - .env mein 3 options:
-#   auto (DEFAULT, recommended) -> Jarvis khud decide karta hai: chhoti
-#       seedhi command ("open youtube") pe reasoning OFF (fastest), lambi/
-#       creative/multi-step command (essay likho, code likho, X aur Y karo)
-#       pe khud-ba-khud zyada "soch" laga deta hai. Isse simple kaam jaldi
-#       hote hain aur mushkil kaam accurate bhi rehte hain - manually kuch
-#       badalne ki zaroorat nahi.
-#   on   -> HAMESHA reasoning ON, REASONING_EFFORT wali fixed depth se
-#           (purana REASONING_ENABLED=true jaisa behavior).
-#   off  -> HAMESHA reasoning OFF, sabse fast (purana REASONING_ENABLED=false).
-REASONING_MODE = os.getenv("REASONING_MODE", "auto").strip().lower()
-if REASONING_MODE not in ("auto", "on", "off"):
-    REASONING_MODE = "auto"
+# Reasoning OFF by default = FAST response. ON karne ke liye .env mein
+# REASONING_ENABLED=true karo - Jarvis tab har command pe pehle "soch"
+# ke (chain-of-thought) jawab dega, jo complex/multi-step commands aur
+# tricky sawaalon ke liye zyada accurate hota hai (thoda slow hoga).
+REASONING_ENABLED = os.getenv("REASONING_ENABLED", "false").lower() == "true"
 
-# Sirf REASONING_MODE=on ke liye fixed effort (auto mode isko ignore karke
-# khud decide karta hai). Options: "low", "medium", "high".
-# .env mein: REASONING_EFFORT=high
+# Reasoning kitni "deep" ho - sirf tab use hota hai jab REASONING_ENABLED=true.
+# Options: "low" (thodi si soch, fast), "medium", "high" (sabse deep/strong
+# thinking, thoda slow). .env mein: REASONING_EFFORT=high
 REASONING_EFFORT = os.getenv("REASONING_EFFORT", "high")
 if REASONING_EFFORT not in ("low", "medium", "high"):
     REASONING_EFFORT = "high"
-
-# Backward-compat (purane code/imports isse use kar sakte hain):
-REASONING_ENABLED = REASONING_MODE != "off"
 
 # ---- Voice (Text-to-Speech) ----
 # Edge TTS ka neural voice - natural sunta hai. Alag try karne ke liye .env mein
@@ -68,7 +57,7 @@ MIC_DEVICE_INDEX = int(_mic_index_env) if _mic_index_env.strip().isdigit() else 
 # Destructive actions ki list jinke liye voice confirmation chahiye
 DESTRUCTIVE_ACTIONS = [
     "delete_file", "shutdown", "restart", "kill_process", "empty_recycle_bin",
-    "logout", "sleep_mode", "uninstall_app", "install_app", "git_push",
+    "logout", "sleep_mode", "uninstall_app", "install_app",
 ]
 
 # Phone se destructive action allow hai, lekin PIN confirm karna padega
@@ -111,21 +100,3 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 # Logging
 LOG_FILE = "jarvis.log"
-
-# ---- GitHub auto-push ----
-# "github update karo" / "sab kuch push kar do" bolne pe Jarvis khud
-# git add + commit + push chala dega. Repo path na do to jahan Jarvis
-# ke files hain (config.py jis folder mein hai) wahi repo maana jaayega.
-# .env mein GIT_REPO_PATH=C:\jarvis daal ke alag folder bhi de sakte ho.
-GIT_REPO_PATH = os.getenv("GIT_REPO_PATH", os.path.dirname(os.path.abspath(__file__)))
-
-# ---- Vision (screenshot dekh kar cheezon pe click karna) ----
-# Isse Jarvis screenshot leke ek vision-capable AI model se poochta hai
-# "is cheez ka button kahan hai" aur uski di hui location pe click karta
-# hai - YouTube like button, kisi bhi window ka koi bhi button/icon jo
-# naam se na khulta ho, sab isi se ban jaata hai.
-# ZAROORI: OPENROUTER_MODEL jaisa text model images nahi dekh sakta -
-# .env mein alag se ek vision model do, jaise:
-#   VISION_MODEL=qwen/qwen2.5-vl-72b-instruct:free   (free)
-#   VISION_MODEL=google/gemini-2.0-flash-001         (paid, zyada accurate)
-VISION_MODEL = os.getenv("VISION_MODEL", "")
