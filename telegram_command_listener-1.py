@@ -107,6 +107,9 @@ def _open_access_enabled() -> bool:
 
 def _is_chat_allowed(chat_id: str, allowed_ids: set) -> bool:
     return _open_access_enabled() or chat_id in allowed_ids
+
+
+def _allowed_chat_ids() -> set:
     """Kaun kaun se chat_id se command allowed hai. Default: sirf
     TELEGRAM_CHAT_ID. Chaho to .env mein TELEGRAM_ALLOWED_CHAT_IDS=id1,id2
     daal ke multiple trusted chats bhi allow kar sakte ho (jaise apna phone
