@@ -24,9 +24,11 @@ Ya phir gui.py / main.py / server.py mein se kisi ek mein
 mein bhi chala sakte ho (README mein integration steps hain).
 """
 
+import asyncio
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 import logging
@@ -36,6 +38,7 @@ import requests
 import config
 import brain
 import actions
+import speech
 
 OFFSET_FILE = os.getenv("TELEGRAM_COMMAND_OFFSET_FILE", "telegram_command_offset.json")
 PIN_STORE_FILE = os.getenv("TELEGRAM_PIN_STORE_FILE", "telegram_command_pin.json")
@@ -132,6 +135,105 @@ def _send_reply(chat_id: str, text: str) -> None:
         logging.error(f"Telegram reply bhejne mein error: {e}")
 
 
+def _transcribe_voice_message(file_id: str) -> str | None:
+    """Telegram voice note (.oga/opus) download karke text mein convert karta
+    hai. Voice note pehle .oga format mein download hoti hai, phir
+    pydub+ffmpeg se .wav mein convert hoti hai (Google Speech Recognition ko
+    wav chahiye), phir speech.py wala hi recognizer use hota hai. Kisi bhi
+    step mein fail ho (ffmpeg missing, unclear audio, etc.) to None return
+    karta hai - caller isko normal text-command jaisa treat na kare."""
+    ogg_path = wav_path = None
+    try:
+        info_url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getFile"
+        info_resp = requests.get(info_url, params={"file_id": file_id}, timeout=15)
+        if not info_resp.ok:
+            logging.error(f"Telegram getFile fail: {info_resp.text}")
+            return None
+        file_path = info_resp.json().get("result", {}).get("file_path")
+        if not file_path:
+            return None
+
+        download_url = f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
+        audio_resp = requests.get(download_url, timeout=30)
+        if not audio_resp.ok:
+            return None
+
+        fd, ogg_path = tempfile.mkstemp(suffix=".oga")
+        with os.fdopen(fd, "wb") as f:
+            f.write(audio_resp.content)
+
+        try:
+            from pydub import AudioSegment
+        except ImportError:
+            logging.error("pydub installed nahi hai - 'pip install pydub' karo (+ ffmpeg system pe).")
+            return None
+
+        wav_path = ogg_path + ".wav"
+        AudioSegment.from_file(ogg_path).export(wav_path, format="wav")
+
+        import speech_recognition as sr
+
+        with sr.AudioFile(wav_path) as source:
+            audio_data = speech.recognizer.record(source)
+        try:
+            return speech.recognizer.recognize_google(audio_data, language="hi-IN").strip()
+        except sr.UnknownValueError:
+            return None
+        except sr.RequestError as e:
+            logging.error(f"Speech recognition service error: {e}")
+            return None
+    except Exception as e:
+        logging.error(f"Voice note transcribe karne mein error: {e}")
+        return None
+    finally:
+        for p in (ogg_path, wav_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+
+def _send_voice_reply(chat_id: str, text: str) -> bool:
+    """Reply ko VOICE NOTE ki tarah bhi bhejta hai - Edge TTS se pehle .mp3
+    banta hai, phir pydub+ffmpeg se Telegram-compatible .ogg (Opus codec)
+    mein convert hota hai, phir sendVoice se bhejte hain. Agar koi bhi step
+    fail ho (ffmpeg/pydub missing, TTS fail, bahut lamba text, etc.) to
+    False return karta hai - is case mein caller normal text reply
+    (_send_reply) bhej dega, taaki user ko response na milna miss na ho."""
+    mp3_path = ogg_path = None
+    try:
+        import edge_tts
+        from pydub import AudioSegment
+
+        fd, mp3_path = tempfile.mkstemp(suffix=".mp3")
+        os.close(fd)
+
+        async def _generate():
+            communicate = edge_tts.Communicate(text, config.TTS_VOICE)
+            await communicate.save(mp3_path)
+
+        asyncio.run(_generate())
+
+        ogg_path = mp3_path + ".ogg"
+        AudioSegment.from_file(mp3_path).export(ogg_path, format="ogg", codec="libopus")
+
+        url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendVoice"
+        with open(ogg_path, "rb") as f:
+            resp = requests.post(url, data={"chat_id": chat_id}, files={"voice": f}, timeout=30)
+        return resp.ok
+    except Exception as e:
+        logging.error(f"Voice reply bhejne mein error: {e}")
+        return False
+    finally:
+        for p in (mp3_path, ogg_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+
 def handle_telegram_command(chat_id: str, user_text: str) -> str:
     """server.py ke handle_command() jaisa hi logic - LLM se action(s)
     decide karke execute karta hai. Destructive actions ke liye PIN
@@ -206,9 +308,35 @@ def _poll_once(allowed_ids: set) -> None:
             continue
 
         chat_id = str(msg.get("chat", {}).get("id", ""))
-        text = msg["text"].strip()
+
+        is_voice = False
+        if "text" in msg:
+            text = msg["text"].strip()
+        elif "voice" in msg:
+            # Voice note aayi hai - pehle allowed_ids check karo (untrusted
+            # chat ki voice download/process karne ki zaroorat nahi), phir
+            # download+transcribe karo.
+            if chat_id not in allowed_ids:
+                logging.info(f"Telegram: untrusted chat_id {chat_id} se voice note ignore ki")
+                continue
+            _send_reply(chat_id, "Voice note sun raha hoon...")
+            text = _transcribe_voice_message(msg["voice"]["file_id"])
+            if not text:
+                _send_reply(
+                    chat_id,
+                    "Voice note samajh nahi aayi (awaaz clear nahi thi ya "
+                    "ffmpeg/pydub install nahi hai - README dekho). Text mein try karo.",
+                )
+                continue
+            is_voice = True
+        else:
+            continue
+
         if not text:
             continue
+
+        if is_voice:
+            _send_reply(chat_id, f'Suna: "{text}"')
 
         if chat_id not in allowed_ids:
             # Trusted list se bahar ka koi bhi message chupchaap ignore -
@@ -256,7 +384,13 @@ def _poll_once(allowed_ids: set) -> None:
             reply = f"Command execute karte waqt error aaya: {e}"
             logging.error(f"Telegram command error: {e}")
 
-        _send_reply(chat_id, reply or "Ho gaya.")
+        reply = reply or "Ho gaya."
+        # Agar command khud VOICE NOTE se aayi thi, to reply bhi voice note
+        # mein bhejne ki koshish karo (text reply bhi hamesha jaata hai,
+        # taaki voice-generation fail hone par bhi user ko jawab miss na ho).
+        if is_voice:
+            _send_voice_reply(chat_id, reply)
+        _send_reply(chat_id, reply)
 
     if max_update_id != offset:
         _save_offset(max_update_id)

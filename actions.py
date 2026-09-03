@@ -28,9 +28,64 @@ import config
 from speech import speak
 
 
+# Browser process/window ko continuously reuse karne ke liye - taaki "chrome
+# kholo" phir "google.com kholo" phir "download folder kholo" jaisi lagataar
+# commands ek hi session jaisi lagein (Siri jaisa), naya browser window har
+# baar na khule. Sirf Windows pe (pywin32) kaam karta hai; non-Windows pe
+# hamesha False deta hai, caller phir normal open/launch use kar leta hai.
+BROWSER_NAMES = {"chrome", "edge", "firefox", "brave", "opera"}
+_BROWSER_TITLE_HINTS = ("Chrome", "Edge", "Firefox", "Brave", "Opera")
+
+
+def _focus_or_open_in_browser(url: str = None, prefer_new_tab: bool = True) -> bool:
+    """Agar koi browser window pehle se khuli hai usko focus kar deta hai -
+    url diya ho to naya tab (prefer_new_tab=True, ctrl+t) ya current tab hi
+    navigate (prefer_new_tab=False, ctrl+l) karke wahan type kar deta hai.
+    url na diya ho to sirf window focus karta hai, kuch type nahi karta.
+    Return True = koi browser window mil gayi aur handle ho gaya; False =
+    koi browser window khuli nahi mili (caller ko naya process launch
+    karna chahiye)."""
+    if platform.system() != "Windows":
+        return False
+    try:
+        import win32gui
+        import win32con
+
+        target_hwnd = None
+
+        def _enum_handler(hwnd, _):
+            nonlocal target_hwnd
+            if target_hwnd or not win32gui.IsWindowVisible(hwnd):
+                return
+            title = win32gui.GetWindowText(hwnd)
+            if any(b in title for b in _BROWSER_TITLE_HINTS):
+                target_hwnd = hwnd
+
+        win32gui.EnumWindows(_enum_handler, None)
+        if not target_hwnd:
+            return False
+
+        win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(target_hwnd)
+        time.sleep(0.4)
+        if url:
+            pyautogui.hotkey("ctrl", "t" if prefer_new_tab else "l")
+            time.sleep(0.3 if prefer_new_tab else 0.2)
+            pyautogui.typewrite(url, interval=0.01)
+            pyautogui.press("enter")
+        return True
+    except Exception:
+        return False
+
+
 def open_app(app_name: str) -> str:
     system = platform.system()
     name_key = app_name.strip().lower()
+
+    # Browser hai aur pehle se khula hai to naya process launch karne ke
+    # bajaye usi ko focus kar do - continuous session jaisa feel dega.
+    if name_key in BROWSER_NAMES and _focus_or_open_in_browser(url=None):
+        return f"{app_name} pehle se khula hai, usi window pe focus kar diya."
 
     if system == "Windows":
         # 1) Kuch apps (Telegram, WhatsApp, Spotify, Discord) apna khud ka URI
@@ -833,6 +888,12 @@ def youtube_search_and_play(query: str) -> str:
 def open_website(url: str) -> str:
     if not url.startswith("http"):
         url = "https://" + url
+    # Pehle se koi browser window khuli hai to usi mein NAYA TAB kholte hain
+    # (naya browser process/window nahi) - taaki lagataar commands (jaise
+    # pehle "chrome kholo", phir "gmail kholo") ek hi continuous session
+    # jaisi lagein, Siri jaisa.
+    if _focus_or_open_in_browser(url, prefer_new_tab=True):
+        return f"{url} ko already khule browser mein naye tab mein khol diya."
     webbrowser.open(url)
     return f"{url} khol raha hoon."
 
