@@ -1,0 +1,229 @@
+"""
+skills/whatsapp_web_skill.py
+------------------------------------------------------------
+WhatsApp Web (web.whatsapp.com) ko Playwright se control karta hai.
+
+Ye purane `send_message` (actions.py, pywhatkit-based) se alag hai -
+usme phone number + country code (jaise +91...) dena zaroori tha.
+Yahan sirf NAAM se message bhej sakte ho (WhatsApp Web ke apne search
+box se dhoondta hai - jaise tum khud UI mein type karte ho), aur
+voice/video call bhi start kar sakte ho (pywhatkit isse bilkul nahi
+kar sakta tha - usme sirf message bhejna possible tha).
+
+SETUP:
+  pip install playwright
+  playwright install chromium
+
+PEHLI BAAR:
+  Jab pehli baar koi whatsapp_* action chalega, ek Chromium window
+  khulega web.whatsapp.com ke saath - apne phone se QR scan karo
+  (WhatsApp -> Settings -> Linked Devices -> Link a Device). Uske
+  baad session `whatsapp_browser_profile/` folder mein save rehta
+  hai, dobara QR scan nahi karna padega jab tak wahan se logout na
+  karo ya wo folder delete na karo.
+
+LIMITATION: WhatsApp Web apna HTML/CSS structure kabhi-kabhi badalta
+rehta hai, isliye agar Meta kuch UI update kare to selectors yahan
+bhi update karne padenge (error message mein clue mil jayega).
+
+THREADING/ASYNCIO FIX (zaroor padhna):
+Pehle ye module seedha apne calling thread (jaise Telegram listener
+wala thread) se Playwright chalata tha - agar wo thread kabhi bhi
+(ab ya future mein) asyncio ke andar se call hota hai (jaise TTS wali
+async_generate() ke through), Playwright error deta hai: "It looks
+like you are using Playwright Sync API inside the asyncio loop."
+Ab, youtube_control_skill.py jaisa hi, saare Playwright calls
+`browser_worker.run_in_browser_thread(...)` ke zariye ek hi fixed,
+plain (non-async) background thread mein bhejte hain - us thread mein
+kabhi kuch aur (TTS, asyncio) nahi chalta, isliye ye error kabhi
+nahi aayega, chahe command kisi bhi thread (GUI, Telegram, phone) se
+aaye.
+"""
+
+import os
+
+from browser_worker import run_in_browser_thread
+
+_PROFILE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "whatsapp_browser_profile"
+)
+
+_context = None
+_page = None
+
+
+def _ensure_page():
+    """IMPORTANT: ye function hamesha browser-worker thread ke andar hi
+    call hona chahiye (run_in_browser_thread ke through) - kabhi bhi
+    seedha kisi caller thread se mat bulao."""
+    global _context, _page
+    if _page is not None:
+        try:
+            _page.title()
+            return _page
+        except Exception:
+            _page = None
+
+    if _context is None:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise RuntimeError(
+                "Playwright missing hai. Chalao: pip install playwright && playwright install chromium"
+            )
+        playwright = sync_playwright().start()
+        _context = playwright.chromium.launch_persistent_context(_PROFILE_DIR, headless=False)
+
+    _page = _context.pages[0] if _context.pages else _context.new_page()
+    _page.goto("https://web.whatsapp.com", timeout=30000)
+    _page.wait_for_timeout(2000)
+    return _page
+
+
+def _open_chat_by_name(page, name: str) -> bool:
+    """WhatsApp ke apne search box mein naam type karke top result kholta hai."""
+    search = page.wait_for_selector(
+        'div[contenteditable="true"][data-tab="3"], div[aria-label="Search input textbox"]',
+        timeout=20000,
+    )
+    search.click()
+    search.fill("")
+    search.type(name, delay=40)
+    page.wait_for_timeout(1200)
+    try:
+        result = page.wait_for_selector(
+            'div[aria-label="Search result"], span[dir="auto"][title]', timeout=6000
+        )
+    except Exception:
+        return False
+    result.click()
+    page.wait_for_timeout(800)
+    return True
+
+
+def whatsapp_open(params: dict) -> str:
+    """WhatsApp Web kholta hai. Pehli baar QR scan karna hoga phone se."""
+    try:
+        run_in_browser_thread(_ensure_page)
+        return "WhatsApp Web khol diya. Agar QR code dikhe to phone se scan kar lo."
+    except Exception as e:
+        return f"WhatsApp Web nahi khul saka: {e}"
+
+
+def send_whatsapp_message_by_name(params: dict) -> str:
+    """Sirf NAAM se WhatsApp message bhejta hai (phone number nahi chahiye)."""
+    name = params.get("name", "").strip()
+    message = params.get("message", "").strip()
+    if not name or not message:
+        return "Kisko aur kya message bhejna hai, dono batao."
+
+    def _job():
+        page = _ensure_page()
+        if not _open_chat_by_name(page, name):
+            return f"'{name}' naam ka contact WhatsApp mein nahi mila - naam check karo."
+        box = page.wait_for_selector(
+            'div[contenteditable="true"][data-tab="10"], footer div[contenteditable="true"]',
+            timeout=8000,
+        )
+        box.click()
+        box.type(message, delay=15)
+        page.keyboard.press("Enter")
+        return f"'{name}' ko WhatsApp pe message bhej diya."
+
+    try:
+        return run_in_browser_thread(_job)
+    except Exception as e:
+        return f"Message nahi bhej saka: {e}"
+
+
+def whatsapp_voice_call(params: dict) -> str:
+    """Naam se WhatsApp VOICE call start karta hai."""
+    name = params.get("name", "").strip()
+    if not name:
+        return "Kisko call karna hai, naam batao."
+
+    def _job():
+        page = _ensure_page()
+        if not _open_chat_by_name(page, name):
+            return f"'{name}' naam ka contact WhatsApp mein nahi mila."
+        btn = page.wait_for_selector(
+            'span[data-icon="audio-call"], span[data-icon="audio-call-refreshed"], '
+            'button[aria-label="Voice call"], span[aria-label="Voice call"]',
+            timeout=8000,
+        )
+        btn.click()
+        return f"'{name}' ko WhatsApp voice call kar raha hoon."
+
+    try:
+        return run_in_browser_thread(_job)
+    except Exception as e:
+        return f"Call nahi ho saka (WhatsApp ka UI update ho sakta hai): {e}"
+
+
+def whatsapp_video_call(params: dict) -> str:
+    """Naam se WhatsApp VIDEO call start karta hai."""
+    name = params.get("name", "").strip()
+    if not name:
+        return "Kisko video call karna hai, naam batao."
+
+    def _job():
+        page = _ensure_page()
+        if not _open_chat_by_name(page, name):
+            return f"'{name}' naam ka contact WhatsApp mein nahi mila."
+        btn = page.wait_for_selector(
+            'span[data-icon="video-call"], span[data-icon="video-call-refreshed"], '
+            'button[aria-label="Video call"], span[aria-label="Video call"]',
+            timeout=8000,
+        )
+        btn.click()
+        return f"'{name}' ko WhatsApp video call kar raha hoon."
+
+    try:
+        return run_in_browser_thread(_job)
+    except Exception as e:
+        return f"Video call nahi ho saka (WhatsApp ka UI update ho sakta hai): {e}"
+
+
+def whatsapp_close(params: dict) -> str:
+    """WhatsApp Web ka browser band kar deta hai (session profile mein save rehta hai)."""
+
+    def _job():
+        global _context, _page
+        try:
+            if _context:
+                _context.close()
+        except Exception:
+            pass
+        _context = None
+        _page = None
+        return "WhatsApp Web band kar diya."
+
+    try:
+        return run_in_browser_thread(_job)
+    except Exception as e:
+        return f"Band karte waqt error: {e}"
+
+
+ACTIONS = {
+    "whatsapp_open": whatsapp_open,
+    "send_whatsapp_message_by_name": send_whatsapp_message_by_name,
+    "whatsapp_voice_call": whatsapp_voice_call,
+    "whatsapp_video_call": whatsapp_video_call,
+    "whatsapp_close": whatsapp_close,
+}
+
+DOCS = """
+- whatsapp_open: {}  (WhatsApp Web kholta hai, pehli baar QR scan karna hoga)
+- send_whatsapp_message_by_name: {"name": "Rohit", "message": "Kal milte hain"}
+    (phone number NAHI chahiye - seedha naam se, WhatsApp ke apne search se)
+- whatsapp_voice_call: {"name": "Rohit"}  (WhatsApp voice call start karta hai)
+- whatsapp_video_call: {"name": "Rohit"}  (WhatsApp video call start karta hai)
+- whatsapp_close: {}  (WhatsApp Web browser band karo)
+
+Example:
+User: "Rohit ko WhatsApp pe bhejo ki main late hoon"
+-> {"actions": [{"action": "send_whatsapp_message_by_name", "params": {"name": "Rohit", "message": "Main late hoon"}}]}
+
+User: "Rohit ko whatsapp pe call karo"
+-> {"actions": [{"action": "whatsapp_voice_call", "params": {"name": "Rohit"}}]}
+"""
