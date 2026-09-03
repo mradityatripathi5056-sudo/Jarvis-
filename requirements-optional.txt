@@ -31,6 +31,8 @@ speedtest-cli==2.1.3
 python-kasa==0.7.4
 
 # Vision / OCR
+pyautogui==0.9.54
+pillow==10.4.0
 pytesseract==0.3.13
 # + Tesseract-OCR binary bhi alag se install karna hoga (README dekho)
 

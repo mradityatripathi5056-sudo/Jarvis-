@@ -55,6 +55,9 @@ Available actions:
 - system_info: {}
 - volume_control: {"level": 50}
 - brightness_control: {"level": 70}
+- screen_read_and_understand: {"question": "screen pe kya chal raha hai?"}
+- screen_find_element: {"element": "Settings button"}
+- screen_click_element: {"element": "Play button", "force": false}
 - screenshot: {}
 - web_search: {"query": "python tutorial"}
 - shutdown: {}
