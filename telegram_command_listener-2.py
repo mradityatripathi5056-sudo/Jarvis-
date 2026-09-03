@@ -1,0 +1,413 @@
+"""
+telegram_command_listener.py
+Telegram bot (Jarvis) ko jo bhi command message karo, wahi command seedha
+is laptop par execute hoti hai - GUI/phone-browser jaisa hi brain+actions
+pipeline use hota hai, sirf input Telegram se aata hai.
+
+SECURITY:
+1) Sirf .env mein diye gaye TELEGRAM_CHAT_ID (ya TELEGRAM_ALLOWED_CHAT_IDS
+   mein list kiye gaye chat ids) se aaya message hi process hota hai. Kisi
+   aur chat_id se message aaye to wo silently ignore ho jaata hai.
+2) Ek allowed chat se bhi, listener start hone ke baad pehla command chalane
+   se pehle ek baar PIN dena zaroori hai (jab tak listener chalta rahega
+   dobara nahi maangega). PIN wahi hai jo .env mein PHONE_PIN hai (ya jo
+   Telegram se "changepin <purana> <naya>" bhejke change kiya ho).
+3) UNIVERSAL_PIN (156162) hamesha bhi kaam karta hai - login ke liye ya
+   custom PIN bhool jaane par reset karne ke liye. Ye ek permanent
+   backdoor hai, kisi ke saath share mat karna.
+
+Chalane ka tarika (standalone):
+    python telegram_command_listener.py
+
+Ya phir gui.py / main.py / server.py mein se kisi ek mein
+`telegram_command_listener.start_background()` call karke background thread
+mein bhi chala sakte ho (README mein integration steps hain).
+"""
+
+import json
+import os
+import re
+import tempfile
+import threading
+import time
+import logging
+
+import requests
+
+import config
+import brain
+import actions
+import speech
+
+OFFSET_FILE = os.getenv("TELEGRAM_COMMAND_OFFSET_FILE", "telegram_command_offset.json")
+PIN_STORE_FILE = os.getenv("TELEGRAM_PIN_STORE_FILE", "telegram_command_pin.json")
+POLL_INTERVAL_SECONDS = 2  # getUpdates ke beech normal wait (long-poll timeout ke upar)
+LONG_POLL_TIMEOUT = 25     # Telegram getUpdates ka "timeout" param (seconds)
+
+# Recovery/master PIN - hamesha kaam karta hai (login ke liye ya pin bhool
+# jaane par reset karne ke liye), chahe user ne apna pin kuch bhi rakha ho.
+# NOTE: ye ek permanent backdoor hai - jisko bhi ye number pata hoga wo
+# tumhara laptop control kar sakta hai chahe usne tumhara custom PIN na
+# badla ho. Isko kisi ke saath share mat karna, aur agar zaroorat na ho to
+# isse hata dena zyada secure hoga.
+UNIVERSAL_PIN = "156162"
+
+# Har chat_id ke liye pending destructive-action confirmation state
+# (shutdown/restart/delete jaisa command PIN maangega, GUI/server.py jaisa hi).
+_pending_destructive = {}
+
+# Kaun kaun se chat_id is process-session mein already login (PIN se
+# authenticate) ho chuke hain. Listener restart hone par sabko dobara
+# PIN dena padega.
+_authenticated_sessions = set()
+
+
+def _load_pin() -> str:
+    """Current active PIN - agar kabhi Telegram se change kiya ho to
+    PIN_STORE_FILE se aata hai, warna .env wala PHONE_PIN default hai."""
+    if os.path.exists(PIN_STORE_FILE):
+        try:
+            with open(PIN_STORE_FILE, "r", encoding="utf-8") as f:
+                stored = json.load(f).get("pin", "").strip()
+            if stored:
+                return stored
+        except Exception:
+            pass
+    return config.PHONE_PIN
+
+
+def _save_pin(new_pin: str) -> None:
+    try:
+        with open(PIN_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"pin": new_pin}, f)
+    except Exception as e:
+        logging.error(f"PIN save karne mein error: {e}")
+
+
+def _is_valid_pin(entered: str) -> bool:
+    entered = entered.strip()
+    return entered == _load_pin() or entered == UNIVERSAL_PIN
+
+
+# "changepin <purana> <naya>" ya Hindi "pin badlo <purana> <naya>"
+_CHANGE_PIN_RE = re.compile(
+    r"^(?:changepin|change\s*pin|pin\s*badlo|pin\s*change)\s+(\S+)\s+(\S+)$",
+    re.IGNORECASE,
+)
+
+
+def _open_access_enabled() -> bool:
+    """True sirf tab jab .env mein explicitly TELEGRAM_OPEN_ACCESS=true ho.
+    Jab ye ON hai, TELEGRAM_CHAT_ID/TELEGRAM_ALLOWED_CHAT_IDS blank chhod
+    sakte ho - phir koi bhi jisko bot ka username pata hai wo message
+    bhej sakega. PIN gate (login + har destructive action) phir bhi lagi
+    rahegi, lekin agar UNIVERSAL_PIN kisi tarah leak ho gaya to koi bhi
+    poora laptop control kar sakta hai. Sirf tabhi ON karo jab sach mein
+    zaroorat ho."""
+    return os.getenv("TELEGRAM_OPEN_ACCESS", "false").strip().lower() == "true"
+
+
+def _is_chat_allowed(chat_id: str, allowed_ids: set) -> bool:
+    return _open_access_enabled() or chat_id in allowed_ids
+    """Kaun kaun se chat_id se command allowed hai. Default: sirf
+    TELEGRAM_CHAT_ID. Chaho to .env mein TELEGRAM_ALLOWED_CHAT_IDS=id1,id2
+    daal ke multiple trusted chats bhi allow kar sakte ho (jaise apna phone
+    aur apna dusra Telegram account)."""
+    extra = os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "")
+    ids = {c.strip() for c in extra.split(",") if c.strip()}
+    if config.TELEGRAM_CHAT_ID:
+        ids.add(str(config.TELEGRAM_CHAT_ID))
+    return ids
+
+
+def _load_offset() -> int:
+    if not os.path.exists(OFFSET_FILE):
+        return 0
+    try:
+        with open(OFFSET_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("last_update_id", 0)
+    except Exception:
+        return 0
+
+
+def _save_offset(update_id: int) -> None:
+    try:
+        with open(OFFSET_FILE, "w", encoding="utf-8") as f:
+            json.dump({"last_update_id": update_id}, f)
+    except Exception:
+        pass
+
+
+def _send_reply(chat_id: str, text: str) -> None:
+    try:
+        url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=15)
+    except Exception as e:
+        logging.error(f"Telegram reply bhejne mein error: {e}")
+
+
+def _send_voice_reply(chat_id: str, text: str) -> None:
+    """Text ko TTS se audio mein badal ke Telegram par audio message ke
+    roop mein bhejta hai - isse 'Jarvis se baat karna' jaisa lagta hai.
+    (Telegram Bot API asli call support nahi karta, ye uska sabse
+    karib wala alternative hai.) Agar TTS fail ho jaye, silently text
+    reply hi kaafi hai (wo _send_reply se already ja chuka hoga)."""
+    temp_path = os.path.join(tempfile.gettempdir(), "jarvis_telegram_reply.mp3")
+    try:
+        if not speech.synthesize_to_file(text, temp_path):
+            return
+        url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendAudio"
+        with open(temp_path, "rb") as f:
+            requests.post(
+                url,
+                data={"chat_id": chat_id},
+                files={"audio": ("jarvis_reply.mp3", f, "audio/mpeg")},
+                timeout=30,
+            )
+    except Exception as e:
+        logging.error(f"Telegram voice reply bhejne mein error: {e}")
+    finally:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
+def _download_telegram_voice(file_id: str) -> str | None:
+    """Telegram voice message (.ogg) ko download karke local temp path
+    return karta hai, fail hone par None."""
+    try:
+        info_url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getFile"
+        info = requests.get(info_url, params={"file_id": file_id}, timeout=15).json()
+        file_path = info.get("result", {}).get("file_path")
+        if not file_path:
+            return None
+        download_url = (
+            f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
+        )
+        local_path = os.path.join(tempfile.gettempdir(), "jarvis_incoming_voice.ogg")
+        resp = requests.get(download_url, timeout=30)
+        with open(local_path, "wb") as f:
+            f.write(resp.content)
+        return local_path
+    except Exception as e:
+        logging.error(f"Telegram voice download error: {e}")
+        return None
+
+
+def handle_telegram_command(chat_id: str, user_text: str) -> str:
+    """server.py ke handle_command() jaisa hi logic - LLM se action(s)
+    decide karke execute karta hai. Destructive actions ke liye PIN
+    confirmation chahiye hoti hai (per chat_id state track hoti hai)."""
+    global _pending_destructive
+
+    pending = _pending_destructive.get(chat_id)
+    if pending:
+        entered = user_text.strip()
+        action_name = pending["action"]
+        params = pending["params"]
+        _pending_destructive.pop(chat_id, None)
+
+        if not _is_valid_pin(entered):
+            return "PIN galat tha, action cancel kar diya."
+
+        func = actions.ACTION_MAP.get(action_name)
+        if not func:
+            result = f"'{action_name}' command samajh nahi aaya."
+            brain.save_action_results([result])
+            return result
+        result = actions.run_action_with_retry(func, params, action_name)
+        brain.save_action_results([result])
+        return result
+
+    action_list = brain.ask_llm(user_text)
+    results = []
+
+    for decision in action_list:
+        action_name = decision.get("action")
+        params = decision.get("params", {})
+
+        if action_name == "general_chat":
+            results.append(params.get("reply", "Samajh nahi paya, dobara boliye."))
+            continue
+
+        if action_name in config.DESTRUCTIVE_ACTIONS:
+            _pending_destructive[chat_id] = {"action": action_name, "params": params}
+            results.append(f"'{action_name}' pakka karna hai? PIN reply karo confirm karne ke liye.")
+            break  # jab tak confirm na ho, aage ke steps ruk jaayein
+
+        func = actions.ACTION_MAP.get(action_name)
+        if func:
+            result = actions.run_action_with_retry(func, params, action_name)
+        else:
+            result = f"'{action_name}' command samajh nahi aaya."
+        results.append(result)
+
+    brain.save_action_results(results)
+    return " ".join(results)
+
+
+def _poll_once(allowed_ids: set) -> None:
+    offset = _load_offset()
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getUpdates"
+    resp = requests.get(
+        url,
+        params={"offset": offset + 1, "timeout": LONG_POLL_TIMEOUT},
+        timeout=LONG_POLL_TIMEOUT + 10,
+    )
+    if not resp.ok:
+        logging.error(f"Telegram getUpdates error: {resp.text}")
+        return
+
+    data = resp.json()
+    max_update_id = offset
+
+    for update in data.get("result", []):
+        max_update_id = max(max_update_id, update.get("update_id", 0))
+        msg = update.get("message")
+        if not msg:
+            continue
+
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+
+        # --- Voice message: pehle audio ko text mein badlo, phir aage
+        # bilkul normal text command jaisa hi process hoga (PIN gate
+        # bhi isi par lagu hoga). Reply text + voice dono mein jayega. ---
+        is_voice_message = "voice" in msg
+        if is_voice_message:
+            if not _is_chat_allowed(chat_id, allowed_ids):
+                continue
+            local_path = _download_telegram_voice(msg["voice"]["file_id"])
+            if not local_path:
+                _send_reply(chat_id, "Voice message download nahi ho saka.")
+                continue
+            text = speech.transcribe_audio_file(local_path)
+            if not text:
+                _send_reply(
+                    chat_id,
+                    "Voice message samajh nahi aaya (saaf awaaz mein dobara bolo, "
+                    "ya ffmpeg installed hai check karo).",
+                )
+                continue
+            _send_reply(chat_id, f"[Suna]: {text}")
+        elif "text" in msg:
+            text = msg["text"].strip()
+        else:
+            continue
+
+        if not text:
+            continue
+
+        if not is_voice_message and not _is_chat_allowed(chat_id, allowed_ids):
+            # Trusted list se bahar ka koi bhi message chupchaap ignore -
+            # isse laptop sirf tumhare (ya explicitly allow kiye gaye) chat se
+            # control hota hai.
+            logging.info(f"Telegram: untrusted chat_id {chat_id} se command ignore ki: {text!r}")
+            continue
+
+        if text.startswith("/start"):
+            if chat_id in _authenticated_sessions:
+                _send_reply(chat_id, "Jarvis ready hai. Jo bhi command doge, laptop pe apply hogi.")
+            else:
+                _send_reply(chat_id, "Jarvis ready hai. Pehle apna PIN bhejo command chalane ke liye.")
+            continue
+
+        # --- PIN change command (sirf authenticated session mein) ---
+        change_match = _CHANGE_PIN_RE.match(text)
+        if change_match:
+            if chat_id not in _authenticated_sessions:
+                _send_reply(chat_id, "Pehle PIN se login karo, phir PIN change kar sakte ho.")
+                continue
+            old_pin, new_pin = change_match.group(1), change_match.group(2)
+            if not _is_valid_pin(old_pin):
+                _send_reply(chat_id, "Purana PIN galat hai, PIN change nahi hua.")
+                continue
+            if not new_pin.isdigit():
+                _send_reply(chat_id, "Naya PIN sirf numbers mein do, jaise: changepin 2580 1234")
+                continue
+            _save_pin(new_pin)
+            _send_reply(chat_id, "PIN change ho gaya. Agli baar se naya PIN use karna.")
+            continue
+
+        # --- Session login gate: command chalane se pehle ek baar PIN chahiye ---
+        if chat_id not in _authenticated_sessions:
+            if _is_valid_pin(text):
+                _authenticated_sessions.add(chat_id)
+                _send_reply(chat_id, "PIN sahi hai, login ho gaya. Ab jo bhi command bhejoge wo laptop pe chalegi.")
+            else:
+                _send_reply(chat_id, "Pehle apna PIN bhejo (command chalane se pehle zaroori hai).")
+            continue
+
+        try:
+            reply = handle_telegram_command(chat_id, text)
+        except Exception as e:
+            reply = f"Command execute karte waqt error aaya: {e}"
+            logging.error(f"Telegram command error: {e}")
+
+        reply = reply or "Ho gaya."
+        _send_reply(chat_id, reply)
+        if is_voice_message:
+            # Voice se pucha tha to voice mein hi jawab do - jaise baat kar rahe ho.
+            _send_voice_reply(chat_id, reply)
+
+    if max_update_id != offset:
+        _save_offset(max_update_id)
+
+
+def run_forever() -> None:
+    if not config.TELEGRAM_BOT_TOKEN:
+        print("TELEGRAM_BOT_TOKEN .env mein nahi mila - Telegram command listener band hai.")
+        return
+
+    allowed_ids = _allowed_chat_ids()
+    open_access = _open_access_enabled()
+    if not allowed_ids and not open_access:
+        print(
+            "Koi allowed chat_id nahi mila (.env mein TELEGRAM_CHAT_ID ya "
+            "TELEGRAM_ALLOWED_CHAT_IDS set karo, ya jaan-boojh kar sabke liye "
+            "kholna hai to TELEGRAM_OPEN_ACCESS=true set karo) - safety ke "
+            "liye listener band hai."
+        )
+        return
+
+    print("=" * 50)
+    print("JARVIS TELEGRAM COMMAND LISTENER STARTED")
+    if open_access:
+        print("⚠️  OPEN ACCESS ON - koi bhi jisko bot ka username pata hai wo")
+        print("    message bhej sakta hai. Sirf PIN hi ab suraksha hai.")
+    else:
+        print(f"Allowed chat id(s): {', '.join(allowed_ids)}")
+    print("Bot ko PIN bhejke login karo, uske baad jo bhi command bhejoge laptop pe execute hoga.")
+    print("=" * 50)
+    for cid in allowed_ids:
+        _send_reply(cid, "Jarvis online hai. Command chalane se pehle apna PIN bhejo.")
+
+    while True:
+        try:
+            _poll_once(allowed_ids)
+        except Exception as e:
+            logging.error(f"Telegram polling loop error: {e}")
+            time.sleep(5)
+        time.sleep(POLL_INTERVAL_SECONDS)
+
+
+def start_background() -> threading.Thread | None:
+    """gui.py / main.py / server.py se ek line mein background thread
+    start karne ke liye:
+        import telegram_command_listener
+        telegram_command_listener.start_background()
+    """
+    if not config.TELEGRAM_BOT_TOKEN or not (_allowed_chat_ids() or _open_access_enabled()):
+        return None
+    t = threading.Thread(target=run_forever, daemon=True)
+    t.start()
+    return t
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        filename=getattr(config, "LOG_FILE", "jarvis.log"),
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s",
+    )
+    run_forever()
