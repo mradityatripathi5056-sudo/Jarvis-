@@ -1,4 +1,3 @@
-
 """
 brain.py
 OpenRouter API se baat karne ka logic. User ke command ko samajh kar
@@ -327,7 +326,11 @@ def _build_payload(messages: list) -> dict:
     payload = {
         "model": config.OPENROUTER_MODEL,
         "messages": messages,
-        "max_tokens": 1500,  # essay/note jaisa lamba content bhi fit ho sake
+        # 1500 bahut kam tha - pura HTML/CSS wali website jaisa lamba
+        # content isse zyada tokens leta hai aur beech mein hi kat jaata
+        # tha (incomplete JSON -> parse fail -> raw text screen pe dump
+        # ho jaata tha). 4000 rakha hai taaki bade files bhi poore ban sakein.
+        "max_tokens": 4000,
     }
     if config.REASONING_ENABLED:
         payload["reasoning"] = {"effort": config.REASONING_EFFORT}
@@ -407,10 +410,29 @@ def ask_llm(user_input: str) -> list:
 
         response.raise_for_status()
         data = response.json()
-        message = data["choices"][0]["message"]
+        choice = data["choices"][0]
+        message = choice["message"]
         content = message.get("content", "").strip()
+        finish_reason = choice.get("finish_reason", "")
 
         parsed = _extract_json(content)
+
+        # Response max_tokens limit ki wajah se beech mein kat gaya (bahut
+        # lamba content, jaise pura HTML/CSS website) - raw adhoora JSON
+        # user ko dikhane ki bajaye clear message do.
+        if finish_reason == "length" and not parsed:
+            conversation_history.append({"role": "assistant", "content": content})
+            _save_history(conversation_history)
+            return [
+                {
+                    "action": "general_chat",
+                    "params": {
+                        "reply": "Content bahut lamba tha, jawab beech mein hi kat gaya. "
+                        "Thoda chhota/simple version try karo, ya request ko 2 hisso "
+                        "mein tod ke bolo."
+                    },
+                }
+            ]
 
         # Pehli try fail hui - ek dobara try, is baar strict reminder ke saath.
         # Free models kabhi-kabhi JSON ke aage-peeche extra text jod dete hain.
