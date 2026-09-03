@@ -20,18 +20,29 @@ if not OPENROUTER_API_KEY:
         "aur usme apni real key daalo: OPENROUTER_API_KEY=sk-or-v1-xxxxx"
     )
 
-# Reasoning OFF by default = FAST response. ON karne ke liye .env mein
-# REASONING_ENABLED=true karo - Jarvis tab har command pe pehle "soch"
-# ke (chain-of-thought) jawab dega, jo complex/multi-step commands aur
-# tricky sawaalon ke liye zyada accurate hota hai (thoda slow hoga).
-REASONING_ENABLED = os.getenv("REASONING_ENABLED", "false").lower() == "true"
+# REASONING_MODE - .env mein 3 options:
+#   auto (DEFAULT, recommended) -> Jarvis khud decide karta hai: chhoti
+#       seedhi command ("open youtube") pe reasoning OFF (fastest), lambi/
+#       creative/multi-step command (essay likho, code likho, X aur Y karo)
+#       pe khud-ba-khud zyada "soch" laga deta hai. Isse simple kaam jaldi
+#       hote hain aur mushkil kaam accurate bhi rehte hain - manually kuch
+#       badalne ki zaroorat nahi.
+#   on   -> HAMESHA reasoning ON, REASONING_EFFORT wali fixed depth se
+#           (purana REASONING_ENABLED=true jaisa behavior).
+#   off  -> HAMESHA reasoning OFF, sabse fast (purana REASONING_ENABLED=false).
+REASONING_MODE = os.getenv("REASONING_MODE", "auto").strip().lower()
+if REASONING_MODE not in ("auto", "on", "off"):
+    REASONING_MODE = "auto"
 
-# Reasoning kitni "deep" ho - sirf tab use hota hai jab REASONING_ENABLED=true.
-# Options: "low" (thodi si soch, fast), "medium", "high" (sabse deep/strong
-# thinking, thoda slow). .env mein: REASONING_EFFORT=high
+# Sirf REASONING_MODE=on ke liye fixed effort (auto mode isko ignore karke
+# khud decide karta hai). Options: "low", "medium", "high".
+# .env mein: REASONING_EFFORT=high
 REASONING_EFFORT = os.getenv("REASONING_EFFORT", "high")
 if REASONING_EFFORT not in ("low", "medium", "high"):
     REASONING_EFFORT = "high"
+
+# Backward-compat (purane code/imports isse use kar sakte hain):
+REASONING_ENABLED = REASONING_MODE != "off"
 
 # ---- Voice (Text-to-Speech) ----
 # Edge TTS ka neural voice - natural sunta hai. Alag try karne ke liye .env mein
