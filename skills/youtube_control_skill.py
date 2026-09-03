@@ -15,7 +15,18 @@ SETUP:
 NOTE: Like/Subscribe ke liye jarvis jis Chromium profile mein YouTube khol
 raha hai, usme tumhara Google account login hona chahiye (ek baar manually
 login kar lo, phir wahi session persist rahega jab tak browser band na ho).
+
+THREADING FIX (zaroor padhna):
+Jarvis har command (bola ya type kiya) ek NAYE thread mein process karta
+hai (gui.py). Playwright ki sync API sirf usi thread se kaam karti hai
+jisne use start kiya - isliye "play karo" ek thread mein browser khole
+aur baad mein "pause karo"/"like karo" doosre (naye) thread se aaye to
+"Cannot switch to a different thread" crash hota tha. Ab saare Playwright
+calls `browser_worker.run_in_browser_thread(...)` ke zariye ek hi fixed
+background thread mein bhejte hain, chahe command kisi bhi thread se aaye.
 """
+
+from browser_worker import run_in_browser_thread
 
 _browser = None
 _context = None
@@ -24,7 +35,8 @@ _page = None
 
 def _ensure_page():
     """Chalu YouTube tab return karta hai. Agar band ho gaya ho ya kabhi
-    khula hi na ho, naya bana deta hai."""
+    khula hi na ho, naya bana deta hai. IMPORTANT: ye function hamesha
+    browser-worker thread ke andar hi call hona chahiye."""
     global _browser, _context, _page
     if _page is not None:
         try:
@@ -48,110 +60,100 @@ def _ensure_page():
     return _page
 
 
-def yt_play(params: dict) -> str:
-    """YouTube pe search karke pehla video usi (yaad rakhe hue) tab mein play karta hai."""
-    query = params.get("query", "").strip()
-    if not query:
-        return "Kya play karna hai, naam batao."
+# ------------------------------------------------------------------
+# Internal implementations - ye sab sirf browser-worker thread ke
+# andar chalti hain (run_in_browser_thread ke zariye).
+# ------------------------------------------------------------------
+
+def _yt_play_impl(query: str) -> str:
+    page = _ensure_page()
+    page.goto(f"https://www.youtube.com/results?search_query={query}", timeout=20000)
+    video = page.wait_for_selector("ytd-video-renderer a#video-title", timeout=10000)
+    video.click()
+    page.wait_for_timeout(2500)
     try:
-        page = _ensure_page()
-        page.goto(f"https://www.youtube.com/results?search_query={query}", timeout=20000)
-        video = page.wait_for_selector("ytd-video-renderer a#video-title", timeout=10000)
-        video.click()
-        page.wait_for_timeout(2500)
-        try:
-            skip = page.wait_for_selector(
-                ".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container",
-                timeout=3000,
-            )
-            if skip:
-                skip.click()
-        except Exception:
-            pass
-        return f"'{query}' play kar raha hoon YouTube pe."
-    except Exception as e:
-        return f"Play nahi ho saka: {e}"
+        skip = page.wait_for_selector(
+            ".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container",
+            timeout=3000,
+        )
+        if skip:
+            skip.click()
+    except Exception:
+        pass
+    return f"'{query}' play kar raha hoon YouTube pe."
 
 
-def yt_like(params: dict) -> str:
-    """Chalu tab ke video ko like karta hai (agar already liked hai to bata deta hai)."""
+def _yt_like_impl() -> str:
     if _page is None:
         return "Pehle koi video play karo, phir like karna."
+    # state="attached" use kiya hai "visible" ki jagah - YouTube ka like
+    # button kabhi player-overlay ki wajah se Playwright ko "visible" nahi
+    # dikhta jab tak use hover/scroll na kiya jaye, jisse pehle timeout
+    # ho jaata tha even though button DOM mein maujood aur clickable hota hai.
+    btn = _page.wait_for_selector(
+        "ytd-menu-renderer #segmented-like-button button, button[aria-label*='like this video' i]",
+        timeout=8000,
+        state="attached",
+    )
+    btn.scroll_into_view_if_needed()
+    if (btn.get_attribute("aria-pressed") or "").lower() == "true":
+        return "Ye video already liked hai."
     try:
-        btn = _page.wait_for_selector(
-            "button[aria-label*='like this video' i], ytd-menu-renderer #segmented-like-button button",
-            timeout=6000,
-        )
-        if (btn.get_attribute("aria-pressed") or "").lower() == "true":
-            return "Ye video already liked hai."
-        btn.click()
-        return "Video like kar diya!"
-    except Exception as e:
-        return f"Like nahi ho saka (login check karo): {e}"
+        btn.click(timeout=5000)
+    except Exception:
+        # Normal click fail ho (overlay/covered element) to seedha DOM
+        # click event fire karo - ye visibility check ko bypass kar deta hai.
+        btn.evaluate("el => el.click()")
+    return "Video like kar diya!"
 
 
-def yt_subscribe(params: dict) -> str:
-    """Chalu tab ke channel ko subscribe karta hai."""
+def _yt_subscribe_impl() -> str:
     if _page is None:
         return "Pehle koi video play karo, phir subscribe karna."
+    btn = _page.wait_for_selector(
+        "ytd-subscribe-button-renderer button, #subscribe-button button",
+        timeout=8000,
+        state="attached",
+    )
+    btn.scroll_into_view_if_needed()
+    if "subscribed" in (btn.inner_text() or "").strip().lower():
+        return "Ye channel already subscribed hai."
     try:
-        btn = _page.wait_for_selector(
-            "ytd-subscribe-button-renderer button, #subscribe-button button",
-            timeout=6000,
-        )
-        if "subscribed" in (btn.inner_text() or "").strip().lower():
-            return "Ye channel already subscribed hai."
-        btn.click()
-        return "Channel subscribe kar diya!"
-    except Exception as e:
-        return f"Subscribe nahi ho saka (login check karo): {e}"
+        btn.click(timeout=5000)
+    except Exception:
+        btn.evaluate("el => el.click()")
+    return "Channel subscribe kar diya!"
 
-def yt_pause_resume(params: dict) -> str:
-    """Chalu video ka play/pause toggle karta hai."""
+
+def _yt_pause_resume_impl() -> str:
     if _page is None:
         return "Koi video khula hi nahi hai."
-    try:
-        _page.keyboard.press("k")
-        return "Play/pause toggle kar diya."
-    except Exception as e:
-        return f"Nahi ho saka: {e}"
+    _page.keyboard.press("k")
+    return "Play/pause toggle kar diya."
 
 
-def yt_next(params: dict) -> str:
-    """Agla suggested/queue video pe jaata hai."""
+def _yt_next_impl() -> str:
     if _page is None:
         return "Koi video khula hi nahi hai."
-    try:
-        _page.keyboard.press("shift+n")
-        return "Next video pe gaya."
-    except Exception as e:
-        return f"Nahi ho saka: {e}"
+    _page.keyboard.press("shift+N")
+    return "Next video pe gaya."
 
 
-def yt_mute_toggle(params: dict) -> str:
-    """Video mute/unmute toggle karta hai."""
+def _yt_mute_toggle_impl() -> str:
     if _page is None:
         return "Koi video khula hi nahi hai."
-    try:
-        _page.keyboard.press("m")
-        return "Mute/unmute toggle kar diya."
-    except Exception as e:
-        return f"Nahi ho saka: {e}"
+    _page.keyboard.press("m")
+    return "Mute/unmute toggle kar diya."
 
 
-def yt_fullscreen_toggle(params: dict) -> str:
-    """Fullscreen on/off toggle karta hai."""
+def _yt_fullscreen_toggle_impl() -> str:
     if _page is None:
         return "Koi video khula hi nahi hai."
-    try:
-        _page.keyboard.press("f")
-        return "Fullscreen toggle kar diya."
-    except Exception as e:
-        return f"Nahi ho saka: {e}"
+    _page.keyboard.press("f")
+    return "Fullscreen toggle kar diya."
 
 
-def yt_close(params: dict) -> str:
-    """YouTube tab/browser poori tarah band karta hai (agli baar 'play karo' se naya khulega)."""
+def _yt_close_impl() -> str:
     global _browser, _context, _page
     try:
         if _browser:
@@ -162,6 +164,70 @@ def yt_close(params: dict) -> str:
     _context = None
     _page = None
     return "YouTube tab/browser band kar diya."
+
+
+# ------------------------------------------------------------------
+# Public ACTIONS - ye kisi bhi thread se call ho sakte hain, andar se
+# hamesha browser-worker thread pe hi kaam hota hai.
+# ------------------------------------------------------------------
+
+def yt_play(params: dict) -> str:
+    query = params.get("query", "").strip()
+    if not query:
+        return "Kya play karna hai, naam batao."
+    try:
+        return run_in_browser_thread(lambda: _yt_play_impl(query))
+    except Exception as e:
+        return f"Play nahi ho saka: {e}"
+
+
+def yt_like(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_like_impl)
+    except Exception as e:
+        return f"Like nahi ho saka (login check karo): {e}"
+
+
+def yt_subscribe(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_subscribe_impl)
+    except Exception as e:
+        return f"Subscribe nahi ho saka (login check karo): {e}"
+
+
+def yt_pause_resume(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_pause_resume_impl)
+    except Exception as e:
+        return f"Nahi ho saka: {e}"
+
+
+def yt_next(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_next_impl)
+    except Exception as e:
+        return f"Nahi ho saka: {e}"
+
+
+def yt_mute_toggle(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_mute_toggle_impl)
+    except Exception as e:
+        return f"Nahi ho saka: {e}"
+
+
+def yt_fullscreen_toggle(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_fullscreen_toggle_impl)
+    except Exception as e:
+        return f"Nahi ho saka: {e}"
+
+
+def yt_close(params: dict) -> str:
+    try:
+        return run_in_browser_thread(_yt_close_impl)
+    except Exception as e:
+        return f"Nahi ho saka: {e}"
 
 
 ACTIONS = {
