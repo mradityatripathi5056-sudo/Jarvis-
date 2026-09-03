@@ -1,4 +1,15 @@
 """
+[NOTE - YE FILE ACTIVE NAHI HAI]
+Ye ek purani duplicate copy thi jo kabhi 'skills/' folder mein rakh di gayi
+thi. skill_loader.py sirf ACTIONS/DOCS dict dhundta hai (ye file wo export
+nahi karti), aur README/.env dono `python telegram_command_listener.py`
+(root wali file) chalane ko bolte hain - isliye ye copy kabhi run hi nahi
+hoti thi, aur isme jo voice-note support tha wo kabhi kaam nahi kar raha
+tha. Voice-note (in + out dono) support ab ROOT wali
+`telegram_command_listener.py` mein hai - wahi chalao:
+    python telegram_command_listener.py
+Ye file safe reference ke liye rakhi hai, isko delete kar sakte ho.
+------------------------------------------------------------
 telegram_command_listener.py
 Telegram bot (Jarvis) ko jo bhi command message karo, wahi command seedha
 is laptop par execute hoti hai - GUI/phone-browser jaisa hi brain+actions
