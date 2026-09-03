@@ -1,0 +1,16 @@
+.env
+.ENV
+.Env
+*.env
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+*.log
+logs/
+jarvis_history.json
+whatsapp_browser_profile/
+telegram_contacts.json
+.DS_Store
+Thumbs.db
