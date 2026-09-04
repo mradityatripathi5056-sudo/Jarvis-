@@ -1,0 +1,38 @@
+# requirements.txt
+# ------------------------------------------------------------
+# CORE dependencies - Jarvis chalane ke liye zaroori (chahe koi
+# skill use karo ya na karo). Skill-specific/optional packages
+# ke liye requirements-optional.txt dekho.
+#
+#   pip install -r requirements.txt
+# ------------------------------------------------------------
+
+python-dotenv
+requests
+
+# Voice - speech recognition (listening) + TTS (speaking)
+SpeechRecognition
+pyttsx3
+edge-tts
+playsound==1.2.2
+
+# System control - volume, brightness, clipboard, windows,
+# mouse/keyboard automation, screenshots
+psutil
+pyautogui
+pyperclip
+pygetwindow
+screen-brightness-control
+comtypes
+pycaw
+Pillow
+
+# Windows-only: clipboard/COM/window management (win32clipboard,
+# win32con, win32gui, win32com, pythoncom, winshell)
+# Mac/Linux pe ye install nahi hoga - pip khud hi skip kar dega
+# (marker ki wajah se), Jarvis un features ko gracefully skip karega.
+pywin32; sys_platform == "win32"
+winshell; sys_platform == "win32"
+
+# server.py (optional local web/API server mode)
+Flask
