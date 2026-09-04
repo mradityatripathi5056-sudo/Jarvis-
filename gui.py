@@ -572,6 +572,21 @@ def main():
     voice_thread = threading.Thread(target=voice_loop, daemon=True)
     voice_thread.start()
     threading.Thread(target=telegram_contacts_background, daemon=True).start()
+
+    # Telegram remote-control listener bhi Jarvis GUI ke saath hi turant
+    # start ho jaaye - alag se "python telegram_command_listener.py"
+    # manually chalane ki zaroorat nahi. Chunki setup_autostart.py already
+    # gui.py ko Windows Startup mein daal deta hai, isliye laptop on hote
+    # hi Telegram automatically connect ho jayega.
+    try:
+        import telegram_command_listener
+        if telegram_command_listener.start_background():
+            logging.info("Telegram listener background mein start ho gaya.")
+        else:
+            logging.info("Telegram listener start nahi hua - TELEGRAM_BOT_TOKEN ya allowed chat ID .env mein set nahi hai.")
+    except Exception as e:
+        logging.error(f"Telegram listener start karte waqt error: {e}")
+
     root.mainloop()
 
 
