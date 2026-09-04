@@ -65,6 +65,19 @@ def _ensure_page():
 # andar chalti hain (run_in_browser_thread ke zariye).
 # ------------------------------------------------------------------
 
+def _yt_search_impl(query: str) -> str:
+    """PROBLEM jo fix ho raha hai: yt_play seedha pehla video play kar deta
+    tha - lekin agar user sirf "search karo" bole (khud dekh ke choose
+    karna chahta ho), to seedha play karna galat hai. Ye function sirf
+    search RESULTS PAGE tak le jaata hai, koi video click/play nahi karta -
+    baaki yt_* commands (like/subscribe/next) isi tab pe kaam karte rahenge
+    jaise hi user koi video khud click kare ya 'X play karo' bole."""
+    page = _ensure_page()
+    page.goto(f"https://www.youtube.com/results?search_query={query}", timeout=20000)
+    page.wait_for_selector("ytd-video-renderer a#video-title", timeout=10000)
+    return f"YouTube pe '{query}' search kar diya - results dikh rahe hain."
+
+
 def _yt_play_impl(query: str) -> str:
     page = _ensure_page()
     page.goto(f"https://www.youtube.com/results?search_query={query}", timeout=20000)
@@ -171,6 +184,16 @@ def _yt_close_impl() -> str:
 # hamesha browser-worker thread pe hi kaam hota hai.
 # ------------------------------------------------------------------
 
+def yt_search(params: dict) -> str:
+    query = params.get("query", "").strip()
+    if not query:
+        return "Kya search karna hai, naam batao."
+    try:
+        return run_in_browser_thread(lambda: _yt_search_impl(query))
+    except Exception as e:
+        return f"Search nahi ho saka: {e}"
+
+
 def yt_play(params: dict) -> str:
     query = params.get("query", "").strip()
     if not query:
@@ -231,6 +254,7 @@ def yt_close(params: dict) -> str:
 
 
 ACTIONS = {
+    "yt_search": yt_search,
     "yt_play": yt_play,
     "yt_like": yt_like,
     "yt_subscribe": yt_subscribe,
@@ -242,6 +266,11 @@ ACTIONS = {
 }
 
 DOCS = """
+- yt_search: {"query": "lofi song"}
+    (YouTube pe search kar ke sirf RESULTS PAGE tak le jaata hai - koi video
+    auto-play NAHI karta. Use tab jab user sirf "search karo"/"dhundo" bole,
+    khud dekh ke choose karna chahta ho. Isi tab pe baad mein "pehla wala
+    play karo" bhi bol sakte ho (click_on_screen use hoga uske liye).)
 - yt_play: {"query": "lofi song"}
     (YouTube khol ke pehla result play karta hai. Ye tab yaad rakha jaata
     hai - isके baad wale yt_* commands isi tab pe chalte hain.)
@@ -254,6 +283,9 @@ DOCS = """
 - yt_close: {}  (YouTube tab/browser band karo)
 
 Example:
+User: "youtube pe lofi gaana search karo"
+-> {"actions": [{"action": "yt_search", "params": {"query": "lofi song"}}]}
+
 User: "youtube khol ke koi lofi gaana play karo"
 -> {"actions": [{"action": "yt_play", "params": {"query": "lofi song"}}]}
 
