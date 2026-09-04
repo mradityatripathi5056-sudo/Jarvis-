@@ -225,4 +225,15 @@ User: "message box mein 'kaha ho' likh ke bhej do"
 
 User: "close button pe click karo"
 -> {"actions": [{"action": "click_on_screen", "params": {"description": "close (X) button"}}]}
+
+User: "Telegram khol ke Rahul ki chat khol ke 'kal milte hain' bhej do"
+-> {"actions": [{"action": "open_app", "params": {"app_name": "telegram"}}, {"action": "click_on_screen", "params": {"description": "Rahul ki chat"}}, {"action": "type_in_field", "params": {"description": "message input box", "text": "kal milte hain", "press_enter": true}}]}
+
+(alag-alag command mein, ek ke baad ek bhi): pehle "Telegram khol do" ->
+open_app; baad mein (naya command) "Rahul ki chat khol do" ->
+click_on_screen(description="Rahul ki chat"); phir "hi likh ke bhej do" ->
+type_in_field. Har baar current screenshot se dhoondta hai, isliye ye
+pichli baar Telegram khula chhoda ho to bhi kaam karega - "koi window
+nahi mili" jaisa jawab is se kabhi nahi aana chahiye, kyunki ye window
+title se nahi, screen content se dhoondta hai.
 """

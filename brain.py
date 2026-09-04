@@ -154,11 +154,26 @@ MOUSE:
 - drag_and_drop: {"from_x": 100, "from_y": 200, "to_x": 500, "to_y": 600}
 - mouse_scroll: {"direction": "up", "amount": 10}  (direction: up/down)
 
-WINDOW MANAGEMENT (title = window ka naam ya partial naam):
+WINDOW MANAGEMENT (title = APPLICATION window ka naam - jaise "Chrome",
+"Notepad" - ye SIRF poori application window ko close/minimize/maximize/
+switch karne ke liye hai):
 - close_window: {"title": "Notepad"}
 - minimize_window: {"title": "Chrome"}
 - maximize_window: {"title": "Chrome"}
 - focus_window: {"title": "Chrome"}
+
+IMPORTANT RULE - kisi UI ELEMENT (button/tab/section/box/link/icon/contact/
+comment area etc, jo ek application ke ANDAR hai, khud application window
+nahi hai) ko open/click/interact karna ho aur uske liye koi dedicated
+action na ho (jaise yt_like sirf YouTube like ke liye hai), to window
+management actions (jinhe upar wala title chahiye) KABHI use mat karo -
+inme sirf real naam ke actual OS windows dhoondte hain, UI ke andar ki
+cheez isse kabhi nahi milegi aur "window nahi mili" wala galat jawab aata
+hai. Iske bajaye HAMESHA click_on_screen/type_in_field use karo (neeche
+dekho) - ye current screenshot dekh ke us cheez ko dhoond leta hai chahe
+wo kisi bhi app ke andar ho. Jaise "comment section kholo", "like button
+dabao", "us bande ki chat kholo" - sab click_on_screen se hi hoga, focus_window
+se nahi.
 
 CLIPBOARD ADVANCED:
 - clipboard_copy_image: {"path": "photo.png"}  (image ko clipboard mein daalta hai)
