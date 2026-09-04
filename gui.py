@@ -466,7 +466,15 @@ class JarvisGUI:
 
 def process_command_thread(text: str):
     ui_queue.put(("status", ("Soch raha hoon...", ACCENT_YELLOW)))
-    result_text = handle_command(text, speak_output=False)
+    try:
+        result_text = handle_command(text, speak_output=False)
+    except Exception as e:
+        # SAFETY NET: agar handle_command ke andar koi na-socha-hua error
+        # bach jaaye, to ye thread chup-chaap crash ho jaata tha aur UI
+        # "Soch raha hoon..." pe hamesha ke liye atki reh jaati thi, user ko
+        # kabhi koi jawab nahi milta. Ab hamesha ek reply milega.
+        logging.error(f"[gui] process_command_thread error: {e}")
+        result_text = f"Kuch galat ho gaya, lekin main chalta rahunga: {e}"
     ui_queue.put(("jarvis_said", result_text))
     speak(result_text)
     ui_queue.put(("status", ("Ready", "gray")))

@@ -9,6 +9,7 @@ mein save hoti hai - sab isi file se padhte/likhte hain.
 """
 
 import json
+import logging
 import os
 import re
 import requests
@@ -526,6 +527,27 @@ def ask_llm(user_input: str) -> list:
             {
                 "action": "general_chat",
                 "params": {"reply": f"Mujhe LLM se connect karne mein dikkat aa rahi hai: {e}"},
+            }
+        ]
+
+    except Exception as e:
+        # SAFETY NET: upar wala try/except sirf network errors (RequestException)
+        # pakadta hai - lekin API kabhi-kabhi 200 status ke saath bhi ajeeb/
+        # adhoora response de sakta hai (jaise "choices" hi missing ho, ya
+        # unexpected structure) jisse IndexError/KeyError jaisa error aata -
+        # pehle wo yahan tak uncaught pahunch ke poora handle_command/thread
+        # crash kar deta tha (gui.py mein background thread chup-chaap mar
+        # jaata, user ko kabhi reply hi nahi milta). Ab chahe kuch bhi ho
+        # jaaye, ask_llm KABHI exception raise nahi karega - hamesha ek clean
+        # general_chat reply milega.
+        logging.error(f"[brain] ask_llm unexpected error: {e}")
+        return [
+            {
+                "action": "general_chat",
+                "params": {
+                    "reply": "Kuch unexpected error aaya command samajhte waqt, lekin main chalta rahunga. "
+                    f"(detail: {e})"
+                },
             }
         ]
 
