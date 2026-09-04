@@ -742,6 +742,18 @@ def screenshot() -> str:
     return f"Screenshot save ho gaya: {filename}"
 
 
+def change_theme(params: dict) -> str:
+    """GUI ka accent color badalta hai (background/layout same rehta hai).
+    gui.py ka poll loop config.PENDING_THEME check karke isse apply karta
+    hai - actions.py seedha gui.py import nahi karta (circular import se
+    bachne ke liye)."""
+    color = (params.get("color") or "").strip().lower()
+    if color not in config.VALID_THEMES:
+        return f"Ye colors available hain: {', '.join(config.VALID_THEMES)}. Inme se koi ek bolo."
+    config.PENDING_THEME = color
+    return f"Theme '{color}' set kar raha hoon."
+
+
 def web_search(query: str) -> str:
     webbrowser.open(f"https://www.google.com/search?q={query}")
     return f"'{query}' search kar raha hoon."
@@ -1803,6 +1815,7 @@ ACTION_MAP = {
     "mute_volume": lambda params: mute_volume(),
     "brightness_control": lambda params: brightness_control(params.get("level", 70)),
     "screenshot": lambda params: screenshot(),
+    "change_theme": change_theme,
     "web_search": lambda params: web_search(params.get("query", "")),
     "shutdown": lambda params: shutdown(),
     "restart": lambda params: restart(),

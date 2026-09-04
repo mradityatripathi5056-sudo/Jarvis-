@@ -10,6 +10,7 @@ import time
 import queue
 import logging
 import re
+import webbrowser
 import tkinter as tk
 from tkinter import scrolledtext, font as tkfont
 from datetime import datetime
@@ -55,6 +56,20 @@ TEXT_MAIN = "#d6f3ff"
 TEXT_DIM = "#5f7d8c"
 HUD_FONT = ("Consolas", 10)
 HUD_FONT_BOLD = ("Consolas", 10, "bold")
+
+# ---- Selectable color themes ----
+# "theme ko red/green/purple/gold/white kar do" jaisa bolne pe accent
+# color badal jaata hai (background/layout same rehta hai, sirf glow/
+# highlight color badalta hai). Status colors (listening=green, thinking=
+# amber, stop=red) semantic hain isliye inhe theme se nahi chheda.
+THEMES = {
+    "cyan": "#00d4ff",
+    "red": "#ff3b6b",
+    "green": "#39ff9d",
+    "purple": "#b366ff",
+    "gold": "#ffcc33",
+    "white": "#e8f4ff",
+}
 
 
 def _lighten(hex_color: str, factor: float = 0.6) -> str:
@@ -135,6 +150,11 @@ class JarvisGUI:
         self.root.configure(bg=BG_DARK)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        # Har (widget, {prop: "accent"/"accent_dim"}) yahan register hota
+        # hai jaise widget banta hai - apply_theme() isi list ko loop karke
+        # live re-color kar deta hai, bina GUI restart kiye.
+        self.theme_widgets = []
+
         title_font = tkfont.Font(family="Consolas", size=20, weight="bold")
         subtitle_font = tkfont.Font(family="Consolas", size=8)
 
@@ -142,15 +162,18 @@ class JarvisGUI:
         header = tk.Frame(root, bg=BG_PANEL, height=90, highlightbackground=ACCENT_DIM, highlightthickness=1)
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
+        self.theme_widgets.append((header, {"highlightbackground": "accent_dim"}))
 
         self.reactor = ArcReactor(header, size=64, bg=BG_PANEL)
         self.reactor.pack(side="left", padx=(18, 10), pady=10)
 
         title_block = tk.Frame(header, bg=BG_PANEL)
         title_block.pack(side="left", pady=10)
-        tk.Label(
+        title_label = tk.Label(
             title_block, text="J . A . R . V . I . S .", bg=BG_PANEL, fg=ACCENT, font=title_font
-        ).pack(anchor="w")
+        )
+        title_label.pack(anchor="w")
+        self.theme_widgets.append((title_label, {"fg": "accent"}))
         self.status_var = tk.StringVar(value="INITIALIZING...")
         tk.Label(
             title_block, textvariable=self.status_var, bg=BG_PANEL, fg=TEXT_DIM, font=subtitle_font
@@ -162,6 +185,7 @@ class JarvisGUI:
             activeforeground=ACCENT, bd=1, highlightbackground=ACCENT_DIM, highlightthickness=1,
         )
         self.mute_btn.pack(side="right", padx=20)
+        self.theme_widgets.append((self.mute_btn, {"fg": "accent", "activeforeground": "accent", "highlightbackground": "accent_dim"}))
 
         self.stop_btn = tk.Button(
             header, text="STOP", command=self.emergency_stop, bg="#2a0a0a", fg=ACCENT_RED,
@@ -170,27 +194,51 @@ class JarvisGUI:
         )
         self.stop_btn.pack(side="right", padx=(0, 8))
 
+        self.dev_btn = tk.Button(
+            header, text="DEV", command=self.show_dev_info, bg="#101a24", fg=ACCENT,
+            relief="flat", padx=14, pady=6, font=HUD_FONT_BOLD, activebackground="#182634",
+            activeforeground=ACCENT, bd=1, highlightbackground=ACCENT_DIM, highlightthickness=1,
+        )
+        self.dev_btn.pack(side="right", padx=(0, 8))
+        self.theme_widgets.append((self.dev_btn, {"fg": "accent", "activeforeground": "accent", "highlightbackground": "accent_dim"}))
+
         # ---- Quick actions ----
         quick_frame = tk.Frame(root, bg=BG_DARK)
         quick_frame.pack(fill="x", padx=15, pady=(12, 5))
+        quick_row1 = tk.Frame(quick_frame, bg=BG_DARK)
+        quick_row1.pack(fill="x")
+        quick_row2 = tk.Frame(quick_frame, bg=BG_DARK)
+        quick_row2.pack(fill="x", pady=(4, 0))
 
         quick_actions = [
             ("SCREENSHOT", "screenshot le lo"),
             ("BATTERY", "battery kitni hai"),
             ("APPS", "chal rahe apps dikhao"),
+            ("WIFI", "wifi/network status batao"),
+            ("LOCK", "screen lock kar do"),
+            ("VOL+", "volume 10 percent badhao"),
+            ("VOL-", "volume 10 percent kam karo"),
+            ("MUSIC", "gaana bajao"),
+            ("YOUTUBE", "youtube khol do"),
+            ("SYSINFO", "system info batao"),
             ("CLEAR", "__clear__"),
         ]
-        for label, cmd in quick_actions:
-            tk.Button(
-                quick_frame, text=label, bg=BG_INPUT, fg=ACCENT, relief="flat",
+        mid = (len(quick_actions) + 1) // 2
+        for i, (label, cmd) in enumerate(quick_actions):
+            target_row = quick_row1 if i < mid else quick_row2
+            btn = tk.Button(
+                target_row, text=label, bg=BG_INPUT, fg=ACCENT, relief="flat",
                 padx=8, pady=7, font=("Consolas", 9, "bold"), activebackground="#182634",
                 activeforeground=ACCENT, bd=1, highlightbackground=ACCENT_DIM, highlightthickness=1,
                 command=lambda c=cmd: self.quick_action(c),
-            ).pack(side="left", padx=4, fill="x", expand=True)
+            )
+            btn.pack(side="left", padx=4, fill="x", expand=True)
+            self.theme_widgets.append((btn, {"fg": "accent", "activeforeground": "accent", "highlightbackground": "accent_dim"}))
 
         # ---- Chat / HUD log ----
         chat_container = tk.Frame(root, bg=BG_DARK, highlightbackground=ACCENT_DIM, highlightthickness=1)
         chat_container.pack(fill="both", expand=True, padx=15, pady=10)
+        self.theme_widgets.append((chat_container, {"highlightbackground": "accent_dim"}))
 
         self.chat_log = scrolledtext.ScrolledText(
             chat_container, wrap=tk.WORD, bg=BG_PANEL, fg=TEXT_MAIN,
@@ -201,6 +249,7 @@ class JarvisGUI:
         self.chat_log.tag_config("user", foreground=ACCENT, font=HUD_FONT_BOLD)
         self.chat_log.tag_config("jarvis", foreground=ACCENT_GREEN, font=HUD_FONT_BOLD)
         self.chat_log.tag_config("dim", foreground=TEXT_DIM, font=("Consolas", 8))
+        self.theme_widgets.append((self.chat_log, {"insertbackground": "accent"}))
 
         # ---- Input ----
         input_frame = tk.Frame(root, bg=BG_DARK)
@@ -208,6 +257,7 @@ class JarvisGUI:
 
         entry_wrap = tk.Frame(input_frame, bg=BG_INPUT, highlightbackground=ACCENT_DIM, highlightthickness=1)
         entry_wrap.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.theme_widgets.append((entry_wrap, {"highlightbackground": "accent_dim"}))
         self.text_input = tk.Entry(
             entry_wrap, bg=BG_INPUT, fg=TEXT_MAIN, insertbackground=ACCENT,
             font=HUD_FONT, relief="flat",
@@ -215,15 +265,91 @@ class JarvisGUI:
         self.text_input.pack(fill="both", expand=True, ipady=10, padx=8)
         self.text_input.bind("<Return>", self.send_typed_command)
         self.text_input.focus()
+        self.theme_widgets.append((self.text_input, {"insertbackground": "accent"}))
 
-        tk.Button(
+        self.send_btn = tk.Button(
             input_frame, text="SEND", command=self.send_typed_command,
             bg=ACCENT, fg="#03070b", relief="flat", padx=20, font=HUD_FONT_BOLD, bd=0,
             activebackground=_lighten(ACCENT, 0.3),
-        ).pack(side="right")
+        )
+        self.send_btn.pack(side="right")
+        self.theme_widgets.append((self.send_btn, {"bg": "accent"}))
 
         self.log("JARVIS", "System online. 'Jarvis' bolke shuru karo, ya neeche type karo.")
         self.root.after(200, self.poll_queue)
+
+    def show_dev_info(self):
+        win = tk.Toplevel(self.root)
+        win.title("Developer Info")
+        win.configure(bg=BG_PANEL)
+        win.geometry("360x200")
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        tk.Label(
+            win, text="J . A . R . V . I . S .", bg=BG_PANEL, fg=ACCENT,
+            font=("Consolas", 14, "bold"),
+        ).pack(pady=(18, 4))
+        tk.Label(
+            win, text="Developer: Aditya Tripathi", bg=BG_PANEL, fg=TEXT_MAIN,
+            font=HUD_FONT_BOLD,
+        ).pack(pady=(6, 2))
+        tk.Label(
+            win, text="SoftCode Studios", bg=BG_PANEL, fg=TEXT_DIM, font=HUD_FONT,
+        ).pack()
+
+        repo_url = "https://github.com/mradityatripathi5056-sudo/Jarvis-"
+        link = tk.Label(
+            win, text=repo_url, bg=BG_PANEL, fg=ACCENT, font=("Consolas", 9, "underline"),
+            cursor="hand2",
+        )
+        link.pack(pady=(14, 4))
+        link.bind("<Button-1>", lambda e: webbrowser.open(repo_url))
+
+        tk.Button(
+            win, text="CLOSE", command=win.destroy, bg=BG_INPUT, fg=ACCENT, relief="flat",
+            padx=14, pady=4, font=HUD_FONT_BOLD, bd=1, highlightbackground=ACCENT_DIM,
+            highlightthickness=1,
+        ).pack(pady=10)
+
+    def apply_theme(self, name: str):
+        """Live GUI re-theme - color-role based widgets ko naye accent
+        color se reconfigure karta hai. Status colors (listening/thinking/
+        stop) semantic hain, badalte nahi."""
+        global ACCENT, ACCENT_DIM
+        new_accent = THEMES.get(name)
+        if not new_accent:
+            return
+        ACCENT = new_accent
+        ACCENT_DIM = self._dim(new_accent)
+
+        for widget, props in self.theme_widgets:
+            try:
+                kwargs = {}
+                for prop, role in props.items():
+                    kwargs[prop] = ACCENT if role == "accent" else ACCENT_DIM
+                widget.config(**kwargs)
+            except Exception:
+                pass
+        try:
+            self.chat_log.tag_config("user", foreground=ACCENT)
+            self.send_btn.config(activebackground=_lighten(ACCENT, 0.3))
+        except Exception:
+            pass
+        self.log("JARVIS", f"Theme '{name}' laga diya.")
+
+    @staticmethod
+    def _dim(hex_color: str) -> str:
+        """Accent color ka desaturated/muted variant banata hai (dim/idle
+        border ke liye) - white ki taraf blend karne ke bajaye grey ki
+        taraf halka blend karta hai."""
+        hex_color = hex_color.lstrip("#")
+        r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+        grey = (r + g + b) / 3
+        r = int(r + (grey - r) * 0.55)
+        g = int(g + (grey - g) * 0.55)
+        b = int(b + (grey - b) * 0.55)
+        return f"#{r:02x}{g:02x}{b:02x}"
 
     def log(self, sender: str, text: str):
         self.chat_log.config(state="normal")
@@ -296,6 +422,9 @@ class JarvisGUI:
                     self.log("JARVIS", payload)
         except queue.Empty:
             pass
+        if config.PENDING_THEME:
+            self.apply_theme(config.PENDING_THEME)
+            config.PENDING_THEME = None
         self.root.after(200, self.poll_queue)
 
     def on_close(self):

@@ -64,6 +64,10 @@ Available actions:
   mein hai). `screenshot` sirf tab use karo jab user explicitly file
   SAVE karna chahta ho ("screenshot le lo/save karo") bina kisi
   explanation ki demand ke.)
+- change_theme: {"color": "red"}
+  (GUI ka accent/glow color badalta hai - available colors: cyan, red,
+  green, purple, gold, white. Jab user "theme/color X kar do", "GUI ko
+  red kar do", "purple wala look kar do" jaisa bole to ye use karo.)
 - web_search: {"query": "python tutorial"}
 - shutdown: {}
 - restart: {}

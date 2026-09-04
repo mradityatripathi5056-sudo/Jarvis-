@@ -54,7 +54,6 @@ WAKE_WORD = "jarvis"
 _mic_index_env = os.getenv("MIC_DEVICE_INDEX", "")
 MIC_DEVICE_INDEX = int(_mic_index_env) if _mic_index_env.strip().isdigit() else None
 
-# Destructive actions ki list jinke liye voice confirmation chahiye
 # Saari generated files (screenshots, camera photos, face enrollment
 # samples, QR codes, AI-generated images) yahan save hoti hain - root
 # folder mein bikhri hui nahi. Ye folder .gitignore mein hai, isliye
@@ -63,6 +62,13 @@ MIC_DEVICE_INDEX = int(_mic_index_env) if _mic_index_env.strip().isdigit() else 
 MEDIA_DIR = "jarvis_media"
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
+# GUI ka color theme change karne ke liye - actions.py (jo gui.py import
+# nahi karta, circular-import se bachne ke liye) yahan bas naam likh deta
+# hai, aur gui.py apne poll loop mein check karke apply kar leta hai.
+PENDING_THEME = None
+VALID_THEMES = ["cyan", "red", "green", "purple", "gold", "white"]
+
+# Destructive actions ki list jinke liye voice confirmation chahiye
 DESTRUCTIVE_ACTIONS = [
     "delete_file", "shutdown", "restart", "kill_process", "empty_recycle_bin",
     "logout", "sleep_mode", "uninstall_app", "install_app",

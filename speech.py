@@ -40,6 +40,15 @@ recognizer.energy_threshold = 300  # baseline - adjust_for_ambient_noise isko re
 
 TEMP_AUDIO = os.path.join(tempfile.gettempdir(), "jarvis_speech.mp3")
 
+# adjust_for_ambient_noise() khud 0.5 sec ka fixed delay lagata hai - agar
+# ye HAR listen() call pe (matlab wake-word ke continuous loop mein bhi)
+# chale to "Jarvis" bolne ke baad response mein noticeable lag feel hota
+# hai. Fix: recalibrate sirf pehli baar aur phir har 20 sec mein ek baar
+# (room ka noise level itni jaldi nahi badalta) - baaki saari calls
+# turant seedha sunna shuru kar deti hain, isliye response fast lagta hai.
+_last_calibration_time = 0.0
+_CALIBRATION_INTERVAL = 20  # seconds
+
 
 def list_microphones() -> str:
     """Sab available microphones (naam + index) print/return karta hai.
@@ -143,9 +152,13 @@ def speak(text: str):
 
 
 def listen(timeout: int = 5, phrase_time_limit: int = 8, language: str = "hi-IN") -> str:
+    global _last_calibration_time
     with _get_microphone() as source:
         print("[Sun raha hoon...]")
-        recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        now = time.time()
+        if now - _last_calibration_time > _CALIBRATION_INTERVAL:
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            _last_calibration_time = now
         try:
             audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
         except sr.WaitTimeoutError:
