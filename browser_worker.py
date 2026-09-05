@@ -102,6 +102,36 @@ def run_in_browser_thread(fn, timeout: int = 60):
     return value
 
 
+def _wire_page(page):
+    """Har naye page/tab pe ek 'popup' listener laga deta hai. PROBLEM
+    jo ye fix karta hai: Flipkart jaisi sites pe product/review links
+    aksar target="_blank" ke saath khulte hain - matlab click karte hi
+    Playwright ek ALAG popup Page bana deta hai jiske baare mein humein
+    pehle pata hi nahi chalta tha (_pages list mein add hi nahi hota
+    tha). Isse do symptoms aate the: (1) 'review khol do' bolne pe
+    review nahi khulta tha kyunki hum purane (search-results wale) page
+    par hi read/click karte reh jaate the, jabki asli review naye
+    background tab mein khula padha rehta tha; (2) wahi click baar-baar
+    retry hota tha isliye HAR baar ek naya tab khul jaata tha ('bar bar
+    new tab open ho jaana').
+
+    Fix: jaise hi koi popup/naya tab khule, usse turant _pages mein add
+    karo AUR usi ko current active tab bana do - taaki agla read/click
+    turant sahi (naye khule) tab par ho, purane stale tab par nahi."""
+    def _on_popup(popup):
+        global _current_index
+        try:
+            _pages.append(popup)
+            _current_index = len(_pages) - 1
+            _wire_page(popup)  # popup se bhi aage popup khul sakta hai
+        except Exception:
+            pass
+    try:
+        page.on("popup", _on_popup)
+    except Exception:
+        pass
+
+
 def get_current_page():
     """Current active tab ka Playwright Page object deta hai - agar koi
     tab khula nahi hai to naya bana deta hai. IMPORTANT: ye function
@@ -119,6 +149,7 @@ def get_current_page():
 
     if not _pages:
         page = _context.new_page()
+        _wire_page(page)
         _pages.append(page)
         _current_index = 0
     else:
@@ -142,6 +173,7 @@ def new_tab(url: str = ""):
     global _current_index
     get_current_page()  # ensures browser/context exist
     page = _context.new_page()
+    _wire_page(page)
     _pages.append(page)
     _current_index = len(_pages) - 1
     if url:

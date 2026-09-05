@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NOVA STEP — Walk Into The Future</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; min-height:100%; overflow-x:hidden; background:#0a0a0f; color:#fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
+
+  /* ===== Animated gradient background ===== */
+  body::before {
+    content:""; position:fixed; inset:0; z-index:-2;
+    background: linear-gradient(120deg, #ff0066, #ffcc00, #00e5ff, #8a2be2, #ff0066);
+    background-size: 400% 400%;
+    animation: gradientShift 18s ease infinite;
+    filter: blur(60px) saturate(140%);
+    opacity: 0.45;
+  }
+  body::after {
+    content:""; position:fixed; inset:0; z-index:-1;
+    background:
+      radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,.7), transparent 50%),
+      radial-gradient(1px 1px at 60% 70%, rgba(255,255,255,.5), transparent 50%),
+      radial-gradient(1.5px 1.5px at 80% 20%, rgba(255,255,255,.6), transparent 50%),
+      radial-gradient(1px 1px at 40% 80%, rgba(255,255,255,.4), transparent 50%),
+      radial-gradient(1.5px 1.5px at 10% 60%, rgba(255,255,255,.5), transparent 50%);
+    background-size: 800px 800px;
+    animation: stars 60s linear infinite;
+    opacity:.6;
+  }
+  @keyframes gradientShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+  @keyframes stars { from{background-position:0 0} to{background-position:800px 800px} }
+
+  /* ===== Navbar ===== */
+  nav {
+    position:fixed; top:0; left:0; right:0; z-index:100;
+    display:flex; justify-content:space-between; align-items:center;
+    padding:18px 50px;
+    backdrop-filter: blur(14px);
+    background: rgba(10,10,15,0.55);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .logo { font-size:1.6rem; font-weight:900; letter-spacing:2px;
+    background: linear-gradient(90deg,#ff0066,#ffcc00,#00e5ff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation: logoGlow 4s ease-in-out infinite;
+  }
+  @keyframes logoGlow { 0%,100%{filter:drop-shadow(0 0 6px #ff0066)} 50%{filter:drop-shadow(0 0 14px #00e5ff)} }
+  nav ul { list-style:none; display:flex; gap:30px; }
+  nav ul li a { color:#fff; text-decoration:none; font-weight:600; position:relative; transition:.3s; }
+  nav ul li a::after {
+    content:""; position:absolute; left:0; bottom:-6px; height:2px; width:0; background:linear-gradient(90deg,#ff0066,#00e5ff); transition:.3s;
+  }
+  nav ul li a:hover { color:#00e5ff; }
+  nav ul li a:hover::after { width:100%; }
+  .nav-btn {
+    padding:10px 22px; border-radius:30px; border:none; cursor:pointer; font-weight:700;
+    background: linear-gradient(90deg,#ff0066,#ffcc00);
+    color:#000; box-shadow: 0 0 20px rgba(255,0,102,.6);
+    transition:.3s;
+  }
+  .nav-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(0,229,255,.8); }
+
+  /* ===== Hero Section ===== */
+  .hero {
+    min-height:100vh; display:flex; align-items:center; justify-content:space-between;
+    padding: 120px 80px 60px; gap:40px; position:relative;
+  }
+  .hero-text { max-width:600px; }
+  .tag {
+    display:inline-block; padding:6px 14px; border-radius:20px;
+    background: rgba(0,229,255,.15); border:1px solid #00e5ff; color:#00e5ff;
+    font-size:.85rem; margin-bottom:20px;
+    animation: pulseTag 2s ease-in-out infinite;
+  }
+  @keyframes pulseTag { 0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,.5)} 50%{box-shadow:0 0 0 12px rgba(0,229,255,0)} }
+  .hero h1 {
+    font-size: clamp(2.5rem, 6vw, 5rem); font-weight:900; line-height:1.05; margin-bottom:20px;
+    background: linear-gradient(90deg,#ffffff,#00e5ff,#ff0066);
+    background-size:200% auto;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation: textShine 5s linear infinite;
+  }
+  @keyframes textShine { to{background-position:200% center} }
+  .hero p { color:#bbb; font-size:1.1rem; line-height:1.6; margin-bottom:30px; }
+  .hero-btns { display:flex; gap:15px; flex-wrap:wrap; }
+  .btn-primary, .btn-ghost {
+    padding:14px 30px; border-radius:30px; font-weight:700; cursor:pointer; font-size:1rem;
+    border:none; transition:.3s;
+  }
+  .btn-primary {
+    background: linear-gradient(90deg,#ff0066,#ffcc00); color:#000;
+    box-shadow: 0 0 25px rgba(255,0,102,.6);
+  }
+  .btn-primary:hover { transform: translateY(-3px) scale(1.03); box-shadow: 0 0 40px rgba(0,229,255,.9); }
+  .btn-ghost {
+    background: transparent; color:#fff; border:2px solid #00e5ff;
+  }
+  .btn-ghost:hover { background:#00e5ff; color:#000; }
+
+  /* ===== Floating Shoe ===== */
+  .shoe-stage { position:relative; width:500px; height:500px; flex-shrink:0; }
+  .shoe-glow {
+    position:absolute; inset:0; border-radius:50%;
+    background: radial-gradient(circle, rgba(255,0,102,.4), rgba(0,229,255,.3) 50%, transparent 70%);
+    filter: blur(40px); animation: pulseGlow 3s ease-in-out infinite;
+  }
+  @keyframes pulseGlow { 0%,100%{transform:scale(1); opacity:.8} 50%{transform:scale(1.2); opacity:1} }
+  .shoe-svg {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:420px; height:auto;
+    animation: float 4s ease-in-out infinite, rotateShoe 12s linear infinite;
+    filter: drop-shadow(0 30px 40px rgba(0,229,255,.4));
+  }
+  @keyframes float { 0%,100%{transform:translate(-50%,-50%) translateY(0)} 50%{transform:translate(-50%,-50%) translateY(-25px)} }
+  @keyframes rotateShoe { 0%{transform:translate(-50%,-50%) rotateY(0deg) translateY(0)} 25%{transform:translate(-50%,-50%) rotateY(15deg) translateY(-20px)} 50%{transform:translate(-50%,-50%) rotateY(0deg) translateY(0)} 75%{transform:translate(-50%,-50%) rotateY(-15deg) translateY(-20px)} 100%{transform:translate(-50%,-50%) rotateY(0deg) translateY(0)} }
+
+  /* ===== Marquee ===== */
+  .marquee {
+    overflow:hidden; white-space:nowrap; padding:18px 0;
+    background: linear-gradient(90deg,#ff0066,#00e5ff);
+    transform: skewY(-2deg); margin: 40px 0;
+  }
+  .marquee-inner { display:inline-block; animation: scroll 20s linear infinite; }
+  .marquee-inner span { font-size:1.4rem; font-weight:900; color:#000; padding:0 40px; letter-spacing:2px; }
+  @keyframes scroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+
+  /* ===== Section Title ===== */
+  .section { padding: 100px 80px; position:relative; }
+  .section-title {
+    text-align:center; font-size: clamp(2rem, 4vw, 3rem); font-weight:900; margin-bottom:15px;
+    background: linear-gradient(90deg,#ffcc00,#ff0066);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .section-sub { text-align:center; color:#aaa; margin-bottom:60px; }
+
+  /* ===== Product Cards ===== */
+  .products { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap:30px; }
+  .card {
+    position:relative; padding:30px; border-radius:20px;
+    background: rgba(255,255,255,0.05); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1); overflow:hidden;
+    transition:.4s; cursor:pointer;
+  }
+  .card::before {
+    content:""; position:absolute; inset:0; border-radius:20px; padding:2px;
+    background: linear-gradient(135deg,#ff0066,#00e5ff,#ffcc00);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    opacity:0; transition:.4s;
+  }
+  .card:hover { transform: translateY(-10px) scale(1.02); box-shadow: 0 20px 50px rgba(0,229,255,.3); }
+  .card:hover::before { opacity:1; }
+  .card .shoe-icon { font-size:5rem; text-align:center; margin:20px 0;
+    animation: cardBounce 3s ease-in-out infinite; display:block;
+  }
+  .card:nth-child(2) .shoe-icon { animation-delay:.3s; }
+  .card:nth-child(3) .shoe-icon { animation-delay:.6s; }
+  .card:nth-child(4) .shoe-icon { animation-delay:.9s; }
+  @keyframes cardBounce { 0%,100%{transform:translateY(0) rotate(-3deg)} 50%{transform:translateY(-12px) rotate(3deg)} }
+  .card h3 { font-size:1.4rem; margin-bottom:10px; }
+  .card p { color:#aaa; font-size:.95rem; margin-bottom:20px; }
+  .price { display:flex; justify-content:space-between; align-items:center; }
+  .price .amt { font-size:1.5rem; font-weight:900; color:#ffcc00; }
+  .price button {
+    padding:8px 18px; border-radius:20px; border:none; cursor:pointer;
+    background: linear-gradient(90deg,#ff0066,#ffcc00); color:#000; font-weight:700;
+    transition:.3s;
+  }
+  .price button:hover { transform: scale(1.1); box-shadow: 0 0 15px rgba(255,0,102,.6); }
+
+  /* ===== Features ===== */
+  .features { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:30px; }
+  .feature {
+    text-align:center; padding:30px 20px; border-radius:20px;
+    background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+    transition:.4s;
+  }
+  .feature:hover { background: rgba(0,229,255,0.08); transform:translateY(-8px); border-color:#00e5ff; }
+  .feature .ico {
+    width:80px; height:80px; margin:0 auto 20px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:2.2rem;
+    background: conic-gradient(from 0deg, #ff0066, #ffcc00, #00e5ff, #8a2be2, #ff0066);
+    animation: spin 6s linear infinite;
+  }
+  .feature .ico span { background:#0a0a0f; width:72px; height:72px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .feature h4 { font-size:1.2rem; margin-bottom:8px; }
+  .feature p { color:#aaa; font-size:.9rem; }
+
+  /* ===== Counters ===== */
+  .stats {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:30px;
+    background: linear-gradient(135deg, rgba(255,0,102,.15), rgba(0,229,255,.15));
+    padding:60px 40px; border-radius:30px; margin: 0 80px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .stat { text-align:center; }
+  .stat .num { font-size:3rem; font-weight:900;
+    background: linear-gradient(90deg,#ffcc00,#ff0066); -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .stat .lbl { color:#aaa; margin-top:8px; letter-spacing:1px; }
+
+  /* ===== Footer ===== */
+  footer {
+    margin-top:100px; padding:50px 80px 30px;
+    background: rgba(0,0,0,0.4); border-top:1px solid rgba(255,255,255,0.1);
+  }
+  .footer-grid { display:grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap:40px; margin-bottom:30px; }
+  footer h4 { color:#00e5ff; margin-bottom:15px; }
+  footer p, footer a { color:#aaa; font-size:.9rem; text-decoration:none; line-height:1.8; display:block; }
+  footer a:hover { color:#ff0066; }
+  .copyright { text-align:center; color:#666; padding-top:20px; border-top:1px solid rgba(255,255,255,0.05); }
+
+  /* ===== Custom cursor ===== */
+  .cursor {
+    position:fixed; top:0; left:0; width:24px; height:24px; border-radius:50%;
+    background: radial-gradient(circle, #ff0066, transparent 70%);
+    pointer-events:none; z-index:9999; transform:translate(-50%,-50%);
+    mix-blend-mode: screen; transition: transform .08s ease-out;
+  }
+
+  /* ===== Scroll reveal ===== */
+  .reveal { opacity:0; transform: translateY(40px); transition: 1s ease; }
+  .reveal.show { opacity:1; transform: translateY(0); }
+
+  @media (max-width: 900px) {
+    nav { padding:14px 20px; }
+    nav ul { display:none; }
+    .hero { flex-direction:column; padding:120px 20px 40px; text-align:center; }
+    .hero-btns { justify-content:center; }
+    .shoe-stage { width:300px; height:300px; }
+    .shoe-svg { width:280px; }
+    .section { padding: 60px 20px; }
+    .stats { margin: 0 20px; padding:40px 20px; }
+    footer { padding: 40px 20px 20px; }
+    .footer-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="cursor" id="cursor"></div>
+
+  <!-- NAVBAR -->
+  <nav>
+    <div class="logo">NOVA STEP</div>
+    <ul>
+      <li><a href="#home">Home</a></li>
+      <li><a href="#products">Collection</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+    <button class="nav-btn">Shop Now →</button>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero" id="home">
+    <div class="hero-text">
+      <span class="tag">🔥 NEW DROP — LIMITED EDITION</span>
+      <h1>WALK INTO THE FUTURE.</h1>
+      <p>NOVA STEP ke naye collection mein speed, style aur smart tech ka perfect blend. Har step pe feel karo next-gen comfort. Engineered for those who refuse to slow down.</p>
+      <div class="hero-btns">
+        <button class="btn-primary">⚡ Buy Now</button>
+        <button class="btn-ghost">▶ Watch Reel</button>
+      </div>
+    </div>
+    <div class="shoe-stage">
+      <div class="shoe-glow"></div>
+      <!-- Inline SVG sneaker -->
+      <svg class="shoe-svg" viewBox="0 0 500 300" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bodyGrad" x1="0" x2="1">
+            <stop offset="0%" stop-color="#ff0066"/>
+            <stop offset="50%" stop-color="#ffcc00"/>
+            <stop offset="100%" stop-color="#00e5ff"/>
+          </linearGradient>
+          <linearGradient id="soleGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#222"/>
+            <stop offset="100%" stop-color="#000"/>
+          </linearGradient>
+        </defs>
+        <!-- sole -->
+        <path d="M30 230 Q40 200 90 195 L420 200 Q470 205 475 235 Q470 260 420 260 L80 258 Q35 255 30 230 Z" fill="url(#soleGrad)" stroke="#00e5ff" stroke-width="1.5"/>
+        <!-- body -->
+        <path d="M70 195 Q80 130 180 110 L320 95 Q400 95 440 140 Q460 170 455 200 L420 200 Q380 175 320 175 L180 180 Q110 185 90 200 Z" fill="url(#bodyGrad)" stroke="#fff" stroke-width="1.5"/>
+        <!-- swoosh -->
+        <path d="M150 175 Q230 110 380 130 Q400 132 405 145 Q330 145 240 175 Z" fill="rgba(0,0,0,0.3)"/>
+        <!-- laces -->
+        <g stroke="#fff" stroke-width="3" fill="none">
+          <line x1="220" y1="115" x2="280" y2="105"/>
+          <line x1="225" y1="135" x2="290" y2="125"/>
+          <line x1="235" y1="155" x2="300" y2="145"/>
+        </g>
+        <!-- toe -->
+        <ellipse cx="420" cy="180" rx="35" ry="22" fill="rgba(255,255,255,0.15)"/>
+        <!-- highlights -->
+        <path d="M100 165 Q200 120 320 115" stroke="rgba(255,255,255,0.5)" stroke-width="2" fill="none"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- MARQUEE -->
+  <div class="marquee">
+    <div class="marquee-inner">
+      <span>★ NEW DROP 2025 ★ FREE SHIPPING ★ LIMITED EDITION ★ WALK INTO THE FUTURE ★ NOVA STEP ★ </span>
+      <span>★ NEW DROP 2025 ★ FREE SHIPPING ★ LIMITED EDITION ★ WALK INTO THE FUTURE ★ NOVA STEP ★ </span>
+    </div>
+  </div>
+
+  <!-- PRODUCTS -->
+  <section class="section" id="products">
+    <h2 class="section-title reveal">OUR COLLECTION</h2>
+    <p class="section-sub reveal">Engineered for every step. Designed for every soul.</p>
+    <div class="products">
+      <div class="card reveal">
+        <span class="shoe-icon">👟</span>
+        <h3>Aero Pro X</h3>
+        <p>Lightweight mesh, cloud-foam sole, neon accents. Built for the runner in you.</p>
+        <div class="price"><span class="amt">₹4,999</span><button>Add to Cart</button></div>
+      </div>
+      <div class="card reveal">
+        <span class="shoe-icon">👟</span>
+        <h3>Phantom Glow</h3>
+        <p>Reflective panels, smart-cushion tech, midnight matte finish. Stealth mode ON.</p>
+        <div class="price"><span class="amt">₹6,499</span><button>Add to Cart</button></div>
+      </div>
+      <div class="card reveal">
+        <span class="shoe-icon">👞</span>
+        <h3>Street Hustler</h3>
+        <p>Canvas body, rubber grip, bold prints. Turn the pavement into your runway.</p>
+        <div class="price"><span class="amt">₹3,799</span><button>Add to Cart</button></div>
+      </div>
+      <div class="card reveal">
+        <span class="shoe-icon">🥾</span>
+        <h3>Titan Trek</h3>
+        <p>Mountain-tough, waterproof, all-terrain sole. Anywhere is your playground.</p>
+        <div class="price"><span class="amt">₹7,999</span><button>Add to Cart</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section" id="features">
+    <h2 class="section-title reveal">WHY NOVA STEP</h2>
+    <p class="section-sub reveal">Not just shoes. A statement.</p>
+    <div class="features">
+      <div class="feature reveal">
+        <div class="ico"><span>⚡</span></div>
+        <h4>Lightning Fast</h4>
+        <p>Engineered with carbon-fiber mid-sole for explosive speed.</p>
+      </div>
+      <div class="feature reveal">
+        <div class="ico"><span>🛡️</span></div>
+        <h4>Built to Last</h4>
+        <p>Military-grade materials, 2-year warranty on every pair.</p>
+      </div>
+      <div class="feature reveal">
+        <div class="ico"><span>🌍</span></div>
+        <h4>Eco Smart</h4>
+        <p>Made from recycled ocean plastic. Walk green, walk proud.</p>
+      </div>
+      <div class="feature reveal">
+        <div class="ico"><span>✨</span></div>
+        <h4>Style First</h4>
+        <p>Designed by world-class artists. Wear art on your feet.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <div class="stats reveal">
+    <div class="stat"><div class="num" data-target="500">0</div><div class="lbl">DESIGNS</div></div>
+    <div class="stat"><div class="num" data-target="120">0</div><div class="lbl">COUNTRIES</div></div>
+    <div class="stat"><div class="num" data-target="98">0</div><div class="lbl">% HAPPY FEET</div></div>
+    <div class="stat"><div class="num" data-target="15">0</div><div class="lbl">AWARDS WON</div></div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer id="contact">
+    <div class="footer-grid">
+      <div>
+        <div class="logo" style="font-size:1.4rem; margin-bottom:15px;">NOVA STEP</div>
+        <p>Walk Into The Future. Premium shoes for the ones who dare to stand out. Made in India. Made for the world.</p>
+      </div>
+      <div>
+        <h4>Shop</h4>
+        <a href="#">Men</a>
+        <a href="#">Women</a>
+        <a href="#">Kids</a>
+        <a href="#">Limited Drops</a>
+      </div>
+      <div>
+        <h4>Help</h4>
+        <a href="#">Size Guide</a>
+        <a href="#">Returns</a>
+        <a href="#">Track Order</a>
+        <a href="#">Contact</a>
+      </div>
+      <div>
+        <h4>Follow</h4>
+        <a href="#">Instagram</a>
+        <a href="#">Twitter</a>
+        <a href="#">YouTube</a>
+        <a href="#">TikTok</a>
+      </div>
+    </div>
+    <div class="copyright">© 2025 NOVA STEP. All rights reserved. Built with ❤️ and a lot of caffeine.</div>
+  </footer>
+
+<script>
+  // Custom cursor follow
+  const cursor = document.getElementById('cursor');
+  document.addEventListener('mousemove', e => {
+    cursor.style.left = e.clientX + 'px';
+    cursor.style.top  = e.clientY + 'px';
+  });
+
+  // Cursor hover scale
+  document.querySelectorAll('button, a, .card, .feature').forEach(el => {
+    el.addEventListener('mouseenter', () => cursor.style.transform = 'translate(-50%,-50%) scale(2.5)');
+    el.addEventListener('mouseleave', () => cursor.style.transform = 'translate(-50%,-50%) scale(1)');
+  });
+
+  // Scroll reveal
+  const reveals = document.querySelectorAll('.reveal');
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('show'); });
+  }, { threshold: 0.15 });
+  reveals.forEach(r => io.observe(r));
+
+  // Animated counters
+  const counters = document.querySelectorAll('.num');
+  const counterIO = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting && !e.target.dataset.done) {
+        e.target.dataset.done = "1";
+        const target = +e.target.dataset.target;
+        let cur = 0;
+        const inc = target / 60;
+        const tick = () => {
+          cur += inc;
+          if (cur < target) { e.target.textContent = Math.floor(cur); requestAnimationFrame(tick); }
+          else e.target.textContent = target;
+        };
+        tick();
+      }
+    });
+  }, { threshold: 0.5 });
+  counters.forEach(c => counterIO.observe(c));
+
+  // Smooth scroll for nav links
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const t = document.querySelector(a.getAttribute('href'));
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // Add-to-cart button click feedback
+  document.querySelectorAll('.price button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const old = btn.textContent;
+      btn.textContent = '✓ Added';
+      btn.style.background = 'linear-gradient(90deg,#00e5ff,#ffcc00)';
+      setTimeout(() => { btn.textContent = old; btn.style.background = ''; }, 1500);
+    });
+  });
+</script>
+</body>
+</html>
