@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aditya Construction Pvt Ltd - Building Your Dreams</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        :root {
+            --primary: #ff6b35;
+            --secondary: #1a1a2e;
+            --accent: #f7b801;
+            --light: #f8f9fa;
+            --dark: #16213e;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            line-height: 1.6;
+            color: #333;
+        }
+
+        /* Navbar */
+        header {
+            background: var(--secondary);
+            color: #fff;
+            padding: 1rem 5%;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            gap: 2rem;
+        }
+
+        nav ul li a {
+            color: #fff;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        nav ul li a:hover {
+            color: var(--primary);
+        }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(rgba(26,26,46,0.7), rgba(26,26,46,0.7)), 
+                        url('https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=1600') center/cover;
+            color: #fff;
+            padding: 8rem 5% 6rem;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            animation: fadeInDown 1s ease;
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 2rem;
+            animation: fadeInUp 1s ease;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: var(--primary);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            color: var(--secondary);
+            transform: translateY(-3px);
+        }
+
+        /* Sections */
+        section {
+            padding: 4rem 5%;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: var(--secondary);
+            position: relative;
+        }
+
+        .section-title::after {
+            content: '';
+            display: block;
+            width: 80px;
+            height: 4px;
+            background: var(--primary);
+            margin: 10px auto;
+        }
+
+        /* Services */
+        #services {
+            background: var(--light);
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+        }
+
+        .service-card {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .service-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .service-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .service-card h3 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* About */
+        #about {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: center;
+        }
+
+        #about img {
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        #about p {
+            margin-bottom: 1rem;
+            font-size: 1.05rem;
+        }
+
+        /* Products */
+        #products {
+            background: var(--light);
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .product-item {
+            background: #fff;
+            padding: 1.5rem;
+            border-left: 4px solid var(--primary);
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+
+        .product-item:hover {
+            background: var(--secondary);
+            color: #fff;
+        }
+
+        .product-item h4 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .product-item:hover h4 {
+            color: var(--accent);
+        }
+
+        /* Contact */
+        #contact {
+            background: var(--secondary);
+            color: #fff;
+        }
+
+        #contact .section-title {
+            color: #fff;
+        }
+
+        .contact-form {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .contact-form input,
+        .contact-form textarea {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 1rem;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .contact-form textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .contact-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+            text-align: center;
+        }
+
+        .contact-info div h4 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Footer */
+        footer {
+            background: #0f0f1e;
+            color: #fff;
+            text-align: center;
+            padding: 1.5rem;
+        }
+
+        footer span {
+            color: var(--primary);
+        }
+
+        /* Animations */
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2rem; }
+            nav ul { display: none; }
+            #about { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <nav>
+        <div class="logo">ADITYA <span>CONSTRUCTION</span></div>
+        <ul>
+            <li><a href="#home">Home</a></li>
+            <li><a href="#services">Services</a></li>
+            <li><a href="#products">Products</a></li>
+            <li><a href="#about">About</a></li>
+            <li><a href="#contact">Contact</a></li>
+        </ul>
+    </nav>
+</header>
+
+<section class="hero" id="home">
+    <h1>Building Dreams, Delivering Quality</h1>
+    <p>Your Trusted Partner in Construction, Wiring, Plumbing, Painting & Hardware Supply</p>
+    <a href="#contact" class="btn">Get a Free Quote</a>
+</section>
+
+<section id="services">
+    <h2 class="section-title">Our Services</h2>
+    <div class="services-grid">
+        <div class="service-card">
+            <div class="service-icon">🏗️</div>
+            <h3>Construction</h3>
+            <p>Complete residential and commercial construction services with top-quality materials and skilled workmanship.</p>
+        </div>
+        <div class="service-card">
+            <div class="service-icon">⚡</div>
+            <h3>Wiring & Electrical</h3>
+            <p>Professional electrical wiring, installations, and maintenance by certified electricians.</p>
+        </div>
+        <div class="service-card">
+            <div class="service-icon">🚿</div>
+            <h3>Plumbing</h3>
+            <p>Complete plumbing solutions including installation, repair, and maintenance of water systems.</p>
+        </div>
+        <div class="service-card">
+            <div class="service-icon">🎨</div>
+            <h3>Painting</h3>
+            <p>Interior and exterior painting services with premium paints and expert finishing.</p>
+        </div>
+    </div>
+</section>
+
+<section id="products">
+    <h2 class="section-title">Hardware & Building Materials</h2>
+    <p style="text-align:center; margin-bottom:2rem; font-size:1.1rem;">As a leading supplier, we provide premium quality hardware products at competitive prices.</p>
+    <div class="products-grid">
+        <div class="product-item"><h4>Cement & Concrete</h4><p>All major brands</p></div>
+        <div class="product-item"><h4>Steel & TMT Bars</h4><p>High-grade construction steel</p></div>
+        <div class="product-item"><h4>Bricks & Blocks</h4><p>Fly ash, AAC, red bricks</p></div>
+        <div class="product-item"><h4>Sand & Aggregates</h4><p>M-sand, river sand, gravel</p></div>
+        <div class="product-item"><h4>Electrical Items</h4><p>Wires, switches, MCBs</p></div>
+        <div class="product-item"><h4>Plumbing Materials</h4><p>Pipes, fittings, fixtures</p></div>
+        <div class="product-item"><h4>Paints & Putty</h4><p>Asian Paints, Berger, Nerolac</p></div>
+        <div class="product-item"><h4>Tools & Hardware</h4><p>Power tools, hand tools</p></div>
+        <div class="product-item"><h4>Tiles & Marbles</h4><p>Floor, wall, designer tiles</p></div>
+        <div class="product-item"><h4>Doors & Windows</h4><p>Wooden, UPVC, aluminum</p></div>
+        <div class="product-item"><h4>Sanitary Ware</h4><p>Toilets, basins, faucets</p></div>
+        <div class="product-item"><h4>Safety Equipment</h4><p>Helmets, gloves, harnesses</p></div>
+    </div>
+</section>
+
+<section id="about">
+    <div>
+        <h2 class="section-title" style="text-align:left;">About Us</h2>
+        <p><strong>Aditya Construction Pvt Ltd</strong> is a trusted name in the construction industry, delivering excellence for over a decade. We specialize in end-to-end construction solutions — from laying the foundation to the final coat of paint.</p>
+        <p>Our team of skilled engineers, electricians, plumbers, and painters work with dedication to bring your vision to life. We are also a leading supplier of premium hardware and building materials.</p>
+        <p>✅ Licensed & Insured  ✅ 500+ Projects Completed  ✅ On-Time Delivery  ✅ Quality Guaranteed</p>
+        <a href="#contact" class="btn" style="margin-top:1rem;">Contact Us</a>
+    </div>
+    <div>
+        <img src="https://images.unsplash.com/photo-1541888946425-d81bb19240f5?w=600" alt="Construction site">
+    </div>
+</section>
+
+<section id="contact">
+    <h2 class="section-title">Get In Touch</h2>
+    <form class="contact-form" onsubmit="event.preventDefault(); alert('Thank you! We will contact you soon.');">
+        <input type="text" placeholder="Your Name" required>
+        <input type="email" placeholder="Your Email" required>
+        <input type="tel" placeholder="Phone Number">
+        <textarea placeholder="Tell us about your project (construction, wiring, plumbing, painting, or hardware supply)..." required></textarea>
+        <button type="submit" class="btn">Send Message</button>
+    </form>
+    <div class="contact-info">
+        <div><h4>📍 Address</h4><p>123 Construction Avenue,<br>Main City, India</p></div>
+        <div><h4>📞 Phone</h4><p>+91 98765 43210</p></div>
+        <div><h4>✉️ Email</h4><p>info@adityaconstruction.com</p></div>
+        <div><h4>🕒 Working Hours</h4><p>Mon - Sat: 9AM - 7PM</p></div>
+    </div>
+</section>
+
+<footer>
+    <p>&copy; 2026 <span>Aditya Construction Pvt Ltd</span>. All Rights Reserved. | Building Tomorrow, Today.</p>
+</footer>
+
+</body>
+</html>

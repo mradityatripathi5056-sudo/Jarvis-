@@ -40,3 +40,20 @@ dist/
 .vscode/
 .idea/
 node_modules/
+
+# --- "work" folder: sab client/project files (html, png, jpg, pdf, docx,
+# koi bhi non-Jarvis-code file) yahan rakho. Ye poora folder git se
+# COMPLETELY ignore hai - isme jo bhi ho, wo kabhi commit/push/pull mein
+# touch nahi hota, isliye "local changes overwritten by merge" jaisi
+# error kabhi nahi aayegi. Jarvis ka asli code (skills/, *.py, etc.) is
+# folder ke bahar hi rehta hai jaisa pehle se hai.
+work/
+
+# --- Safety net: agar kabhi koi generated/project file "work/" ke bahar
+# root ya kisi skill folder mein galti se bach jaaye, ye bhi ignore
+# rahenge taaki wo bhi kabhi git conflict na de.
+*.html
+*.pdf
+*.docx
+*.xlsx
+*.pptx
