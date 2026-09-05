@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import os
+import re
 
 try:
     import config
@@ -101,6 +102,30 @@ def run_shell_command(params: dict) -> str:
     timeout = int(params.get("timeout", 20))
     if not command.strip():
         return "Kaunsa command chalana hai, batao."
+
+    # GUARD: LLM (khaas kar free models) kabhi-kabhi prompt-instructions
+    # bhool ke git pull/push/commit/rebase/merge jaisa command yahan se
+    # seedha chalane ki koshish karta hai - jo dedicated
+    # self_update_skill.py (jo missing-tracking, uncommitted-changes,
+    # non-fast-forward jaise edge-cases khud handle karta hai) ko bypass
+    # kar deta hai aur user ko raw confusing git error/conflict dikhta
+    # hai. PEHLE ye check sirf command ke SHURUAAT mein "git pull" dhoondta
+    # tha, isliye chained commands jaise "git stash && git pull --rebase"
+    # miss ho jaate the (jinse repo beech-rebase-mein-conflict jaisi
+    # risky state mein phas sakta hai). Ab poore command STRING mein
+    # KAHIN BHI ye git subcommands dhoondte hain (chained/&&/;/| sab
+    # cover ho jaate hain), aur rebase/merge/stash bhi block list mein
+    # add kiye hain kyunki wo bhi history-changing/conflict-prone hain.
+    _cmd_lower = command.strip().lower()
+    if re.search(r"\bgit\s+(pull|push|commit|rebase|merge)\b", _cmd_lower) or \
+       re.search(r"\bgit\s+stash\s+pop\b", _cmd_lower):
+        return (
+            "Ye git pull/push/commit/rebase/merge jaisa (history-changing) command hai - "
+            "iske liye run_shell_command use nahi hota, iske bajaye check_for_updates / "
+            "apply_update / push_update action use karo (ye edge-cases khud safely handle "
+            "karte hain)."
+        )
+
     try:
         result = subprocess.run(
             command, shell=True, capture_output=True, text=True, timeout=timeout,
