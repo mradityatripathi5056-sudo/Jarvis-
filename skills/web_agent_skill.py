@@ -173,7 +173,21 @@ def _web_do_task_impl(url: str, goal: str) -> str:
             return f"'{url}' khul nahi paya: {e}"
 
     history = []
+    prev_page = page
     for _step in range(MAX_STEPS):
+        # IMPORTANT FIX: pehle ye `page` variable loop ke bahar sirf EK
+        # baar set hota tha - agar beech mein koi click naya tab (popup)
+        # khol deta (jaise Flipkart product/review links target="_blank"
+        # ke saath khulte hain), to hum uss purane/stale page par hi
+        # read-click karte reh jaate the, jabki asli naya content ek
+        # background tab mein khula padha rehta tha. Ab har step ki
+        # shuruaat mein current active tab dobara fetch karte hain, taaki
+        # agar popup ki wajah se tab switch hua ho to turant sahi (naye)
+        # tab par kaam ho, aur wahi click baar-baar naya tab na khole.
+        page = _ensure_page()
+        if page is not prev_page:
+            history.append("(naya tab khula - ab usi par kaam ho raha hai)")
+            prev_page = page
         try:
             page.wait_for_timeout(800)
             elements = page.evaluate(_EXTRACT_JS)
@@ -244,6 +258,9 @@ def web_do_task(params: dict) -> str:
         # generous rakha hai.
         return run_in_browser_thread(lambda: _web_do_task_impl(url, goal), timeout=180)
     except Exception as e:
+        import logging
+        import traceback
+        logging.error(f"[web_agent_skill] web_do_task failed: {e}\n{traceback.format_exc()}")
         return f"Task poora nahi ho saka: {e}"
 
 
