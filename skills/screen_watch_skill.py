@@ -58,16 +58,15 @@ def _vision_model() -> str:
 
 
 def _check_condition_on_screen(condition: str):
-    """Screenshot lekar vision model se pucchta hai condition true hui ya
-    nahi. Returns (is_true: bool, raw_reply: str)."""
-    import pyautogui
+    """Screenshot lekar (multi-monitor aware) vision model se pucchta hai
+    condition true hui ya nahi. Returns (is_true: bool, raw_reply: str)."""
+    import screen_capture
 
-    screenshot_path = os.path.join(config.MEDIA_DIR, "_watch_temp_screenshot.png")
-    pyautogui.screenshot(screenshot_path)
-    with open(screenshot_path, "rb") as f:
+    capture = screen_capture.capture_for_vision()
+    with open(capture["path"], "rb") as f:
         image_b64 = base64.b64encode(f.read()).decode()
     try:
-        os.remove(screenshot_path)
+        os.remove(capture["path"])
     except OSError:
         pass
 

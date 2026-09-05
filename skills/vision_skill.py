@@ -44,13 +44,14 @@ def _vision_model() -> str:
 
 
 def screen_read_and_understand(params: dict) -> str:
-    """Screenshot leta hai aur LLM se pucchta hai ki usme kya hai /
-    question ka jawab deta hai."""
+    """Screenshot leta hai (multi-monitor aware) aur LLM se pucchta hai ki
+    usme kya hai / question ka jawab deta hai."""
     question = params.get("question", "Is screenshot mein kya dikh raha hai, detail mein batao.")
     try:
-        import pyautogui
-        screenshot_path = os.path.join(config.MEDIA_DIR, "_vision_temp_screenshot.png")
-        pyautogui.screenshot(screenshot_path)
+        import screen_capture
+
+        capture = screen_capture.capture_for_vision()
+        screenshot_path = capture["path"]
 
         with open(screenshot_path, "rb") as f:
             image_b64 = base64.b64encode(f.read()).decode()

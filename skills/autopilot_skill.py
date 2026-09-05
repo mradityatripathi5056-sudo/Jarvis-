@@ -11,25 +11,34 @@ hai" (screenshot dekh ke, vision model se) jab tak goal poora na ho
 jaaye ya atak na jaaye.
 
 Ye screen_watch_skill.py se ALAG hai: screen_watch ek SPECIFIC condition
-ka wait karta hai (jaise "jab download 100% ho jaye"). Autopilot iske
-ulta hai - khud active steps leta hai goal ki taraf badhne ke liye, har
-step ke baad phir se screenshot lekar agla decide karta hai.
+ka wait karta hai. Autopilot iske ulta hai - khud active steps leta hai
+goal ki taraf badhne ke liye, har step ke baad phir se screenshot lekar
+agla decide karta hai.
+
+ADVANCED (naya):
+1. MULTI-MONITOR aware (screen_capture.py ke through) - jaisa
+   screen_click_skill.py mein hai.
+2. LAMBA/ZYADA STEPS: default 30, hard cap 80 (pehle 20/40 tha) - lambe
+   multi-app workflows ke liye.
+3. SMART RECOVERY: pehli baar "stuck" milne pe turant hi mat rok do - ek
+   REASON-AWARE recovery attempt do (vision model ko bataya jaata hai
+   "pichli baar ye problem thi", aur usse scroll/wait/alag tarika try
+   karne ka mauka milta hai) - sirf 2 consecutive recovery-fail ke baad
+   hi poori tarah रukta hai.
+4. STUCK-LOOP DETECTION: agar EXACT SAME action+params 3 baar lagatar
+   choose ho (matlab kuch ho hi nahi raha, loop mein atka hai), khud
+   ruk jaata hai - bekar API calls/clicks nahi karta rehta.
+5. Overall WALL-TIME cap bhi hai (max_minutes, default 15, cap 60) -
+   sirf step-count pe depend nahi karta, kabhi kisi step mein zyada time
+   lag jaaye to bhi ek upper limit hai.
 
 SAFETY / DESIGN LIMITS (jaan-bujh kar, screen_watch jaisa hi philosophy):
 - Ek time pe sirf EK autopilot run active ho sakta hai.
-- `max_steps` (default 20, hard cap 40) ke baad khud ruk jaata hai -
-  "hamesha ke liye bina rok-tok" wala open-ended loop NAHI hai, taaki
-  kisi galat/atki hui state mein API calls infinite na chalte rahein.
 - Sirf ek SAFE action whitelist mein se hi action choose kar sakta hai -
   destructive (delete/shutdown/kill_process/etc.), email/call/message-
   send-jaisi high-stakes cheezein, aur system-level actions (install/
-  uninstall/registry/etc.) is whitelist mein NAHI hain - autopilot khud
-  se inhe kabhi nahi chalayega, chahe vision model kuch bhi decide kare.
-- Start karne se pehle EK confirmation maangta hai (jaise self_upgrade) -
-  kyunki ye ek autonomous loop hai jo khud clicks/typing karega.
-- Har 2 consecutive "samajh nahi aaya / invalid action" pe ginti hoti
-  hai - 3 baar lagatar aisa ho to khud ruk jaata hai (taaki atki hui
-  state mein bekar API calls na hote rahein).
+  uninstall/registry/etc.) is whitelist mein NAHI hain.
+- Start karne se pehle EK confirmation maangta hai (jaise self_upgrade).
 
 Requirement: vision_skill.py jaisa hi - OPENROUTER_API_KEY + optionally
 .env mein VISION_MODEL.
@@ -45,6 +54,7 @@ import time
 import requests
 import config
 import actions
+import screen_capture
 
 _autopilot_thread = None
 _stop_event = threading.Event()
@@ -60,6 +70,10 @@ SAFE_ACTIONS = {
     "yt_search", "yt_play", "yt_like", "yt_subscribe", "yt_next",
     "yt_pause_resume", "yt_mute_toggle", "yt_fullscreen_toggle",
 }
+# "wait" real ACTION_MAP mein nahi hai - loop khud isko special-case
+# handle karta hai (kuch execute nahi karta, bas ruk ke agla check leta
+# hai - page load hone dena jaisi situations ke liye useful).
+PSEUDO_ACTIONS = {"wait"}
 
 try:
     if "start_autopilot" not in config.DESTRUCTIVE_ACTIONS:
@@ -83,19 +97,22 @@ def _extract_json(text: str) -> dict | None:
         return None
 
 
-def _decide_next_step(goal: str, history: list) -> dict | None:
-    import pyautogui
-
-    screenshot_path = os.path.join(config.MEDIA_DIR, "_autopilot_temp_screenshot.png")
-    pyautogui.screenshot(screenshot_path)
-    with open(screenshot_path, "rb") as f:
+def _decide_next_step(goal: str, history: list, recovery_hint: str = "") -> dict | None:
+    capture = screen_capture.capture_for_vision()
+    with open(capture["path"], "rb") as f:
         image_b64 = base64.b64encode(f.read()).decode()
     try:
-        os.remove(screenshot_path)
+        os.remove(capture["path"])
     except OSError:
         pass
 
     history_text = "\n".join(history) if history else "(abhi tak koi step nahi liya)"
+    recovery_text = (
+        f'\nPICHLI BAAR PROBLEM: "{recovery_hint}" - is baar scroll karke, thoda '
+        f'wait karke (status "continue" + action "wait"), ya alag tarike se try karo, '
+        f'seedha "stuck" mat bolo jab tak wapis wahi problem na aaye.\n'
+        if recovery_hint else ""
+    )
     prompt = f"""Tum ek computer-use assistant ho jo current screenshot dekh ke ek
 GOAL poora karne ke liye AGLA EK SINGLE action decide karte ho.
 
@@ -103,7 +120,7 @@ GOAL: "{goal}"
 
 Ab tak ke steps aur unke result:
 {history_text}
-
+{recovery_text}
 Current screenshot dekho aur decide karo:
 - Agar GOAL already poora ho chuka hai (screenshot se confirm hota hai): status "done".
 - Agar aage badhna possible nahi lag raha (error, cheez mil hi nahi rahi, atka
@@ -120,6 +137,7 @@ Sirf inhi actions mein se choose karo (exact naam aur param format use karo):
 - press_key: {{"key": "enter/tab/escape/etc"}}
 - mouse_scroll: {{"direction": "up/down", "amount": 10}}
 - open_folder: {{"path": ""}}
+- wait: {{}}  (kuch second ruko - page/animation load hone de rahe ho)
 - yt_search / yt_play: {{"query": "..."}}
 - yt_like / yt_subscribe / yt_next / yt_pause_resume / yt_mute_toggle / yt_fullscreen_toggle: {{}}
 
@@ -171,7 +189,7 @@ YA {{"status": "stuck", "reason": "..."}}"""
     return parsed
 
 
-def _autopilot_loop(goal: str, interval: int, max_steps: int):
+def _autopilot_loop(goal: str, interval: int, max_steps: int, max_minutes: int):
     try:
         from speech import speak
     except Exception:
@@ -179,14 +197,24 @@ def _autopilot_loop(goal: str, interval: int, max_steps: int):
             return None
 
     history = []
+    last_actions = []  # stuck-loop detection ke liye - last (action, params) signatures
     invalid_streak = 0
+    stuck_recovery_left = 2
     step = 0
+    start_time = time.time()
 
     while not _stop_event.is_set() and step < max_steps:
+        if time.time() - start_time > max_minutes * 60:
+            speak(f"Autopilot {max_minutes} minute ki time-limit tak pahunch gaya, ruk raha hoon.")
+            _status["last_result"] = f"stopped (max_minutes={max_minutes} reached)"
+            break
+
         step += 1
         _status["steps"] = step
 
-        decision = _decide_next_step(goal, history[-5:])
+        recovery_hint = _status.get("_pending_recovery_hint", "")
+        decision = _decide_next_step(goal, history[-5:], recovery_hint)
+        _status["_pending_recovery_hint"] = ""
         status = decision.get("status")
 
         if status == "done":
@@ -195,12 +223,33 @@ def _autopilot_loop(goal: str, interval: int, max_steps: int):
             break
 
         if status == "stuck":
+            if stuck_recovery_left > 0:
+                stuck_recovery_left -= 1
+                history.append(f"Step {step}: atak gaya tha ({decision.get('reason', '')}) - recovery try kar raha hoon.")
+                _status["_pending_recovery_hint"] = decision.get("reason", "")
+                _stop_event.wait(interval)
+                continue
             speak(f"Autopilot atak gaya, ruk raha hoon: {decision.get('reason', '')}")
             _status["last_result"] = "stuck"
             break
 
         action_name = decision.get("action")
         params = decision.get("params", {}) or {}
+        signature = f"{action_name}:{json.dumps(params, sort_keys=True)}"
+
+        # Stuck-loop detection: same action+params 3 baar lagatar = kuch
+        # progress ho hi nahi raha, aage bhi nahi hoga - ruk jao.
+        last_actions.append(signature)
+        last_actions = last_actions[-3:]
+        if len(last_actions) == 3 and len(set(last_actions)) == 1:
+            speak("Autopilot ek hi action baar-baar repeat kar raha hai, progress nahi ho raha - ruk raha hoon.")
+            _status["last_result"] = "stuck (repeated action loop)"
+            break
+
+        if action_name in PSEUDO_ACTIONS:
+            history.append(f"Step {step}: wait kiya.")
+            _stop_event.wait(interval)
+            continue
 
         if action_name not in SAFE_ACTIONS:
             invalid_streak += 1
@@ -246,9 +295,13 @@ def start_autopilot(params: dict) -> str:
     except (TypeError, ValueError):
         interval = 4
     try:
-        max_steps = min(40, max(1, int(params.get("max_steps", 20) or 20)))
+        max_steps = min(80, max(1, int(params.get("max_steps", 30) or 30)))
     except (TypeError, ValueError):
-        max_steps = 20
+        max_steps = 30
+    try:
+        max_minutes = min(60, max(1, int(params.get("max_minutes", 15) or 15)))
+    except (TypeError, ValueError):
+        max_minutes = 15
 
     if not goal:
         return "Goal kya hai batao - jaise 'YouTube pe cat video dhundo, comment kholo, like karo aur subscribe kar do'."
@@ -262,13 +315,13 @@ def start_autopilot(params: dict) -> str:
         _stop_event = threading.Event()
         _status = {"running": True, "goal": goal, "started_at": time.time(), "steps": 0, "last_result": ""}
         _autopilot_thread = threading.Thread(
-            target=_autopilot_loop, args=(goal, interval, max_steps), daemon=True
+            target=_autopilot_loop, args=(goal, interval, max_steps, max_minutes), daemon=True
         )
         _autopilot_thread.start()
 
     return (
-        f"Autopilot shuru kar diya - goal: '{goal}' (max {max_steps} steps, har {interval} sec ek step). "
-        "Beech mein kabhi bhi 'autopilot band karo' bol sakte ho."
+        f"Autopilot shuru kar diya - goal: '{goal}' (max {max_steps} steps ya {max_minutes} min, "
+        f"jo pehle aaye, har {interval} sec ek step). Beech mein kabhi bhi 'autopilot band karo' bol sakte ho."
     )
 
 
@@ -299,17 +352,15 @@ ACTIONS = {
 }
 
 DOCS = """
-- start_autopilot: {"goal": "YouTube pe cat video dhundo, comment section kholo, like karo aur subscribe kar do", "max_steps": 20, "interval": 4}
+- start_autopilot: {"goal": "YouTube pe cat video dhundo, comment section kholo, like karo aur subscribe kar do", "max_steps": 30, "interval": 4, "max_minutes": 15}
     (User jab ek hi baar mein ek BADA/MULTI-STEP goal bole aur chahe ki
     Jarvis khud-ba-khud saare steps chain kare bina har step ke liye
     dobara pucche - "khud karta rahe", "lagatar kaam karta rahe", "sab
     khud kar le" jaisa bole - to ye action use karo. Ye khud screenshot
-    lekar decide karta hai agla step kya hai (click_on_screen, type_in_field,
-    open_app, yt_* etc. use karke), jab tak goal poora na ho jaaye, ya
-    atak na jaaye, ya max_steps khatam na ho jaayein. Destructive hai
-    (confirmation lagegi) kyunki ye khud-ba-khud clicks/typing karega.
-    Har step 'continue' hone pe hi agla step leta hai; goal complete hote
-    hi ya atakne pe khud ruk jaata hai aur bata deta hai.)
+    lekar decide karta hai agla step kya hai, jab tak goal poora na ho
+    jaaye, ya atak na jaaye (ek recovery attempt milta hai), ya
+    max_steps/max_minutes khatam na ho jaayein. Destructive hai
+    (confirmation lagegi) kyunki ye khud-ba-khud clicks/typing karega.)
 - stop_autopilot: {}  ("autopilot band karo", "rok do khud-ba-khud karna")
 - autopilot_status: {}  ("autopilot kya kar raha hai abhi", "kitne steps ho chuke")
 
