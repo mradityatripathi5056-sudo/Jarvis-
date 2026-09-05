@@ -38,6 +38,29 @@ def _run_git(args: list, timeout: int = 30):
     return subprocess.run(["git"] + args, capture_output=True, text=True, timeout=timeout)
 
 
+def _current_branch() -> str:
+    """Current branch ka naam deta hai (e.g. 'main'). PROBLEM: pehle
+    code `git pull` (bina remote/branch bataye) aur `@{u}` (upstream)
+    pe depend karta tha - lekin agar kabhi upstream tracking set na ho
+    (jaise OneDrive .git corruption ke baad repo re-init hua ho), to
+    Git error deta hai: "There is no tracking information for the
+    current branch." Ab hum hamesha EXPLICITLY 'origin <branch>' bolte
+    hain, tracking config pe depend nahi karte."""
+    out = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    return out or "main"
+
+
+def _ensure_upstream(branch: str):
+    """Pull/push ke baad (ya pehle) upstream tracking set kar deta hai
+    taaki aage se bhi plain 'git pull'/'git status' sahi se kaam kare
+    aur ye tracking-missing error dubara na aaye. Fail ho to chup-chaap
+    ignore karo - ye sirf convenience hai, critical nahi."""
+    try:
+        _run_git(["branch", "--set-upstream-to", f"origin/{branch}", branch])
+    except Exception:
+        pass
+
+
 def check_for_updates(params: dict) -> str:
     """Naye changes hain ya nahi dekhta hai - kuch download/apply nahi karta."""
     try:
@@ -45,12 +68,22 @@ def check_for_updates(params: dict) -> str:
         if status.returncode != 0:
             return "Ye folder Git repository nahi hai - self-update ke liye pehle 'git init' + GitHub remote add karna hoga."
 
-        fetch = _run_git(["fetch"], timeout=30)
+        fetch = _run_git(["fetch", "origin"], timeout=30)
         if fetch.returncode != 0:
             return f"Update check nahi ho paya (internet/remote issue): {fetch.stderr.strip()[:300]}"
 
+        branch = _current_branch()
         local = _run_git(["rev-parse", "HEAD"]).stdout.strip()
-        remote = _run_git(["rev-parse", "@{u}"]).stdout.strip()
+        # IMPORTANT: '@{u}' (upstream) ki jagah seedha 'origin/<branch>'
+        # use kar rahe hain - agar upstream tracking set na ho (jaise
+        # OneDrive .git corruption ke baad) to '@{u}' fail ho jaata tha,
+        # 'origin/<branch>' hamesha kaam karta hai jab tak remote branch
+        # exist karta ho.
+        remote_ref = _run_git(["rev-parse", f"origin/{branch}"])
+        if remote_ref.returncode != 0:
+            return f"'origin/{branch}' branch nahi mila remote pe: {remote_ref.stderr.strip()[:200]}"
+        remote = remote_ref.stdout.strip()
+        _ensure_upstream(branch)
         if local == remote:
             return "Jarvis already latest version pe hai."
         log = _run_git(["log", "--oneline", f"{local}..{remote}"]).stdout.strip()
@@ -68,10 +101,16 @@ def apply_update(params: dict) -> str:
         if status.returncode != 0:
             return "Ye folder Git repository nahi hai."
 
-        pull = _run_git(["pull"], timeout=60)
+        branch = _current_branch()
+        # FIX: plain 'git pull' upstream tracking info maangta hai, jo
+        # missing ho sakta hai (see _current_branch docstring). Ab
+        # explicitly 'origin <branch>' de rahe hain isliye tracking
+        # config par depend nahi karta.
+        pull = _run_git(["pull", "origin", branch], timeout=60)
         output = (pull.stdout or "") + (pull.stderr or "")
         if pull.returncode != 0:
             return f"Update apply nahi ho paya: {output.strip()[:400]}"
+        _ensure_upstream(branch)  # aage ke liye tracking set kar do
         if "Already up to date" in output or "Already up-to-date" in output:
             return "Already latest version pe the, koi naya update nahi tha."
         return f"Update ho gaya! {output.strip()[:400]}\nAb Jarvis ko RESTART karo taaki naya code load ho."
@@ -96,15 +135,11 @@ def push_update(params: dict) -> str:
         if not status_check.stdout.strip():
             return "Koi local changes nahi hain jo push karne ho - working tree already clean hai."
 
-        # NOTE: jarvis_media/, *.png, *.jpg, *.jpeg already .gitignore mein
-        # hain, isliye "git add -A ." khud hi unhe skip kar deta hai.
-        # (Pehle yahan extra ":!jarvis_media" jaisi negation pathspecs thi
-        # taaki double-safety mile, lekin kai Git versions (e.g. 2.43) mein
-        # ek already-ignored path pe negation pathspec dene se hi Git
-        # "paths are ignored by .gitignore" error de deta hai aur poora
-        # 'git add' fail ho jaata hai. Isliye plain add use karo -
-        # .gitignore khud media ko bahar rakhega.)
-        add = _run_git(["add", "-A", "--", "."])
+        # Double-safety: jarvis_media/ (screenshots, photos, face data,
+        # QR/AI images) ko explicitly exclude karo, chahe .gitignore
+        # kisi wajah se kaam na kare - "khud ko GitHub pe update kar do"
+        # bolne pe sirf ASLI CODE jaana chahiye, generated media nahi.
+        add = _run_git(["add", "-A", "--", ".", ":!jarvis_media", ":!*.png", ":!*.jpg", ":!*.jpeg"])
         if add.returncode != 0:
             return f"'git add' fail ho gaya: {add.stderr.strip()[:300]}"
 
