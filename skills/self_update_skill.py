@@ -96,11 +96,15 @@ def push_update(params: dict) -> str:
         if not status_check.stdout.strip():
             return "Koi local changes nahi hain jo push karne ho - working tree already clean hai."
 
-        # Double-safety: jarvis_media/ (screenshots, photos, face data,
-        # QR/AI images) ko explicitly exclude karo, chahe .gitignore
-        # kisi wajah se kaam na kare - "khud ko GitHub pe update kar do"
-        # bolne pe sirf ASLI CODE jaana chahiye, generated media nahi.
-        add = _run_git(["add", "-A", "--", ".", ":!jarvis_media", ":!*.png", ":!*.jpg", ":!*.jpeg"])
+        # NOTE: jarvis_media/, *.png, *.jpg, *.jpeg already .gitignore mein
+        # hain, isliye "git add -A ." khud hi unhe skip kar deta hai.
+        # (Pehle yahan extra ":!jarvis_media" jaisi negation pathspecs thi
+        # taaki double-safety mile, lekin kai Git versions (e.g. 2.43) mein
+        # ek already-ignored path pe negation pathspec dene se hi Git
+        # "paths are ignored by .gitignore" error de deta hai aur poora
+        # 'git add' fail ho jaata hai. Isliye plain add use karo -
+        # .gitignore khud media ko bahar rakhega.)
+        add = _run_git(["add", "-A", "--", "."])
         if add.returncode != 0:
             return f"'git add' fail ho gaya: {add.stderr.strip()[:300]}"
 
