@@ -50,6 +50,14 @@ to list mein saare steps sequence mein do.
 Available actions:
 - open_app: {"app_name": "chrome"}
 - close_app: {"app_name": "chrome"}
+- stop_everything: {}
+    (User jab GENERIC "stop"/"ruko"/"ruk jao"/"sab kaam rok do"/"sab band
+    karo" bole BINA ye bataye ki specifically KYA rokna hai, to ye use
+    karo - ye autopilot AUR screen-watch DONO ko ek saath rok deta hai
+    (jo bhi chal raha ho), chahe user ko khud na pata ho ki konsa chal
+    raha hai. Agar user SPECIFICALLY bole "autopilot rok do" ya "screen
+    watch band karo", to seedha wahi specific action (stop_autopilot /
+    stop_screen_watch) use karo, stop_everything nahi.)
 - open_folder: {"path": ""}  (file manager/explorer kholta hai; "file manager kholo" -> path khaali, "Downloads folder kholo" -> path="Downloads")
 - search_file: {"query": "resume.pdf"}
 - create_file: {"path": "test.txt", "content": ""}

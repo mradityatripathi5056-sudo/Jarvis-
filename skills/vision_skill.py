@@ -44,17 +44,15 @@ def _vision_model() -> str:
 
 
 def screen_read_and_understand(params: dict) -> str:
-    """Screenshot leta hai (multi-monitor aware) aur LLM se pucchta hai ki
-    usme kya hai / question ka jawab deta hai."""
+    """Screenshot leta hai (multi-monitor aware, resized/compressed for
+    speed) aur LLM se pucchta hai ki usme kya hai / question ka jawab
+    deta hai."""
     question = params.get("question", "Is screenshot mein kya dikh raha hai, detail mein batao.")
     try:
         import screen_capture
 
         capture = screen_capture.capture_for_vision()
-        screenshot_path = capture["path"]
-
-        with open(screenshot_path, "rb") as f:
-            image_b64 = base64.b64encode(f.read()).decode()
+        image_b64 = capture["image_b64"]
 
         resp = requests.post(
             config.OPENROUTER_URL,
@@ -65,14 +63,13 @@ def screen_read_and_understand(params: dict) -> str:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": question},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
                     ],
                 }],
                 "max_tokens": 600,
             }),
             timeout=30,
         )
-        os.remove(screenshot_path)
         data = resp.json()
         if "choices" not in data:
             # OpenRouter ne error diya (model vision support nahi karta,

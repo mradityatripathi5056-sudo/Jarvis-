@@ -412,16 +412,45 @@ class JarvisGUI:
         """STOP button - galti se bola/type kiya command turant rok deta hai:
         1) chalu TTS awaaz kaat deta hai (Windows pe turant, Mac/Linux pe best-effort)
         2) baaki queued actions is command ke cancel kar deta hai
-        3) safety net: agar galti se shutdown/restart bol diya tha, uska
+        3) AUTOPILOT aur SCREEN-WATCH (jo apne khud ke ALAG background
+           threads hain) ko bhi explicitly rok deta hai - PEHLE ye sirf
+           stop_event set karta tha, jo sirf abhi chal rahe multi-step
+           command list ko cancel karta hai. Autopilot/screen-watch alag
+           thread hain, isliye STOP button unhe kabhi nahi rokta tha -
+           "Rok diya!" bol deta tha lekin autopilot chup-chaap background
+           mein clicks/actions karta rehta tha.
+        4) agar koi purani destructive-action confirmation pending thi
+           (jaise "delete_file karu?"), use bhi clear kar deta hai - warna
+           agla jo bhi bologe ("autopilot band karo" jaisa naya command
+           bhi) galti se us purani confirmation ka "haan/nahi" jawab maan
+           liya jaata tha, aur naya command kabhi actually chalta hi nahi
+           tha.
+        5) safety net: agar galti se shutdown/restart bol diya tha, uska
            5-second OS timer bhi cancel karne ki koshish karta hai (agar
            kuch chalu nahi tha, ye harmless no-op hai)"""
+        global _pending_confirm
+
         stop_event.set()
         speech.stop_speaking()
         try:
             actions.cancel_shutdown({})
         except Exception:
             pass
-        self.log("JARVIS", "Rok diya! Chalu command cancel kar diya.")
+
+        stopped_extra = ""
+        try:
+            func = actions.ACTION_MAP.get("stop_everything")
+            if func:
+                stopped_extra = func({})
+        except Exception:
+            pass
+
+        _pending_confirm = {"action": None, "params": None}
+
+        message = "Rok diya! Chalu command cancel kar diya."
+        if stopped_extra:
+            message += " " + stopped_extra
+        self.log("JARVIS", message)
         self.set_status("Stopped", ACCENT_RED)
 
     def quick_action(self, cmd: str):
@@ -486,7 +515,7 @@ def handle_command(user_text: str, speak_output: bool = True) -> str:
 
     # Pichli baar koi destructive/self-upgrade action confirm karne ke liye
     # pucha gaya tha - to iss baar jo bhi bola/type kiya gaya hai (chahe
-    # voice se ho ya text box se) wahi uska jawab maana jaayega.
+    # voice se ho ya text box se) uska jawab check karte hain.
     if _pending_confirm["action"]:
         action_name = _pending_confirm["action"]
         params = _pending_confirm["params"]
@@ -494,18 +523,38 @@ def handle_command(user_text: str, speak_output: bool = True) -> str:
 
         lowered = user_text.strip().lower()
         confirmed = re.search(r"\b(haan|ha|yes|yeah|yup|sure|ok|okay)\b", lowered) is not None
+        # NOTE: sirf pure negation/nahi-jaisa words - "ruk"/"band" jaan-
+        # bujh kar yahan NAHI hain, kyunki "autopilot band karo"/"ruk jao"
+        # jaisa naya command bhi in words se milta hai - agar wo yahan
+        # "denied" maan liya jaata to us naye command ko "cancel kar diya"
+        # bol ke nigal liya jaata, aur autopilot band karne wala asli
+        # action kabhi chalta hi nahi.
+        denied = re.search(r"\b(nahi|nahin|no|cancel|mat)\b", lowered) is not None
 
-        if not confirmed:
-            result_text = "Theek hai, cancel kar diya."
-        else:
+        if confirmed:
             func = actions.ACTION_MAP.get(action_name)
             if func:
                 result_text = actions.run_action_with_retry(func, params, action_name)
             else:
                 result_text = f"'{action_name}' command samajh nahi aaya."
+            brain.save_action_results([result_text])
+            return result_text
 
-        brain.save_action_results([result_text])
-        return result_text
+        if denied:
+            result_text = "Theek hai, cancel kar diya."
+            brain.save_action_results([result_text])
+            return result_text
+
+        # PROBLEM jo fix ho raha hai: pehle yahan koi bhi na-"haan" jawab
+        # (chahe wo bilkul NAYA, alag command hi kyun na ho - jaise
+        # "autopilot band karo") "cancel kar diya" maan ke seedha nigal
+        # liya jaata tha - user ka naya command kabhi actually process hi
+        # nahi hota tha, aur usse lagta tha ki purana/stale response
+        # dikh raha hai ya kaam ruk nahi raha. Ab agar reply na "haan" hai
+        # na koi clear "nahi/cancel", purani destructive action safely
+        # cancel ho jaati hai (execute NAHI hoti - ye safe default hai),
+        # lekin user ka jo bhi naya command tha, wo neeche normal flow
+        # mein turant process hota hai - kahin nigla nahi jaata.
 
     action_list = brain.ask_llm(user_text)
     results = []
@@ -624,6 +673,18 @@ def main():
             logging.info("Telegram listener start nahi hua - TELEGRAM_BOT_TOKEN ya allowed chat ID .env mein set nahi hai.")
     except Exception as e:
         logging.error(f"Telegram listener start karte waqt error: {e}")
+
+    # PROBLEM jo fix ho raha hai: agar app band ho jaaye (crash/close)
+    # jab screen-watch chal raha ho, to user ko dobara "screen dekho"
+    # bolna padta tha. Ab agar wo watch abhi expire nahi hua tha, khud-
+    # ba-khud yahin se resume ho jaata hai.
+    try:
+        func = actions.ACTION_MAP.get("_resume_screen_watch_internal")
+        resumed = func({}) if func else ""
+        if resumed:
+            logging.info(f"Screen watch resume ho gaya: {resumed}")
+    except Exception as e:
+        logging.error(f"Screen watch resume karte waqt error: {e}")
 
     root.mainloop()
 

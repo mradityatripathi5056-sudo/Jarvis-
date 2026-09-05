@@ -820,6 +820,44 @@ def cancel_shutdown(params: dict = None) -> str:
         return "Kuch cancel karne wala nahi mila."
 
 
+def stop_everything(params: dict = None) -> str:
+    """'stop'/'ruko'/'sab kaam rok do' jaisa GENERIC command ke liye -
+    jitne bhi background AUTONOMOUS loops (autopilot, screen-watch) chal
+    rahe hain sab EK saath rok deta hai, plus pending shutdown/restart
+    timer bhi cancel kar deta hai.
+
+    PROBLEM jo fix ho raha hai: pehle GUI ka STOP button sirf 'stop_event'
+    set karta tha - jo sirf ABHI CHAL RAHE multi-step command list ko
+    cancel karta hai. Autopilot/screen-watch apne khud ke ALAG background
+    thread hain - STOP button unhe kabhi nahi rokta tha, "Rok diya!" bol
+    deta tha lekin wo chup-chaap background mein kaam karte rehte the.
+
+    IMPORTANT: stop_autopilot/stop_screen_watch ko yahan HAMESHA
+    `ACTION_MAP` (isi module ka live, already-merged dict) ke through hi
+    call karo - fresh `import skills.autopilot_skill` karke kabhi nahi,
+    kyunki skill_loader alag se load karta hai (jarvis_skill_* naam se) -
+    normal import se ek BILKUL ALAG module-copy milegi jiske globals
+    (_stop_event, _status) ACTUAL chal rahe thread se connected hi nahi
+    honge, aur stop call ka koi asar nahi padega."""
+    stopped = []
+    for name in ("stop_autopilot", "stop_screen_watch"):
+        try:
+            func = ACTION_MAP.get(name)
+            if func:
+                result = func({})
+                if result and "chal hi nahi raha" not in result:
+                    stopped.append(result)
+        except Exception:
+            pass
+    try:
+        cancel_shutdown({})
+    except Exception:
+        pass
+    if not stopped:
+        return "Koi autonomous kaam (autopilot/screen-watch) chal hi nahi raha tha, ruk gaya."
+    return "Sab kuch rok diya - " + " ".join(stopped)
+
+
 def clipboard_write(text: str) -> str:
     pyperclip.copy(text)
     return "Clipboard mein copy ho gaya."
@@ -1848,6 +1886,7 @@ ACTION_MAP = {
     "shutdown": lambda params: shutdown(),
     "restart": lambda params: restart(),
     "cancel_shutdown": lambda params: cancel_shutdown(params),
+    "stop_everything": lambda params: stop_everything(params),
     "clipboard_write": lambda params: clipboard_write(params.get("text", "")),
     "clipboard_read": lambda params: clipboard_read(),
     "lock_screen": lambda params: lock_screen(),

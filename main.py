@@ -39,6 +39,35 @@ logging.basicConfig(
 _pending_confirm = {"action": None, "params": None}
 
 
+def _process_new_command(command: str) -> str:
+    global _pending_confirm
+
+    action_list = brain.ask_llm(command)
+    results = []
+    for decision in action_list:
+        action_name = decision.get("action")
+        params = decision.get("params", {})
+
+        if action_name == "general_chat":
+            results.append(params.get("reply", "Samajh nahi paya, dobara boliye."))
+            continue
+
+        if action_name in config.DESTRUCTIVE_ACTIONS:
+            _pending_confirm = {"action": action_name, "params": params}
+            results.append(f"Kya aap sure hain {action_name} karna hai? Haan ya Nahi boliye.")
+            break
+
+        func = actions.ACTION_MAP.get(action_name)
+        if func:
+            result = actions.run_action_with_retry(func, params, action_name)
+        else:
+            result = f"'{action_name}' command samajh nahi aaya."
+        results.append(result)
+
+    brain.save_action_results(results)
+    return " ".join(r for r in results if r)
+
+
 def handle_command(command: str, speak_output: bool = True) -> str:
     """GUI (gui.py) jaisa hi logic: brain.ask_llm se action-list decide
     karta hai, ACTION_MAP se execute karta hai, destructive actions ke
@@ -53,44 +82,31 @@ def handle_command(command: str, speak_output: bool = True) -> str:
             params = _pending_confirm["params"]
             _pending_confirm = {"action": None, "params": None}
 
-            confirmed = command.strip().lower() in (
-                "haan", "ha", "yes", "yeah", "yup", "sure", "ok", "okay",
-            )
-            if not confirmed:
-                reply = "Theek hai, cancel kar diya."
-            else:
+            lowered = command.strip().lower()
+            confirmed = lowered in ("haan", "ha", "yes", "yeah", "yup", "sure", "ok", "okay")
+            denied = lowered in ("nahi", "nahin", "no", "cancel", "mat")
+
+            if confirmed:
                 func = actions.ACTION_MAP.get(action_name)
                 if func:
                     reply = actions.run_action_with_retry(func, params, action_name)
                 else:
                     reply = f"'{action_name}' command samajh nahi aaya."
-            brain.save_action_results([reply])
+                brain.save_action_results([reply])
+            elif denied:
+                reply = "Theek hai, cancel kar diya."
+                brain.save_action_results([reply])
+            else:
+                # PROBLEM jo fix ho raha hai: pehle koi bhi na-"haan" jawab
+                # (chahe wo bilkul NAYA command hi kyun na ho) "cancel kar
+                # diya" maan ke nigal liya jaata tha - naya command kabhi
+                # process hi nahi hota tha. Ab purani confirmation safely
+                # cancel ho jaati hai, aur command neeche normal flow mein
+                # jaake process hota hai.
+                reply = _process_new_command(command)
 
         else:
-            action_list = brain.ask_llm(command)
-            results = []
-            for decision in action_list:
-                action_name = decision.get("action")
-                params = decision.get("params", {})
-
-                if action_name == "general_chat":
-                    results.append(params.get("reply", "Samajh nahi paya, dobara boliye."))
-                    continue
-
-                if action_name in config.DESTRUCTIVE_ACTIONS:
-                    _pending_confirm = {"action": action_name, "params": params}
-                    results.append(f"Kya aap sure hain {action_name} karna hai? Haan ya Nahi boliye.")
-                    break
-
-                func = actions.ACTION_MAP.get(action_name)
-                if func:
-                    result = actions.run_action_with_retry(func, params, action_name)
-                else:
-                    result = f"'{action_name}' command samajh nahi aaya."
-                results.append(result)
-
-            brain.save_action_results(results)
-            reply = " ".join(r for r in results if r)
+            reply = _process_new_command(command)
 
     except Exception as e:
         # Safety net: brain/actions ke andar ka koi bhi na-socha-hua error
@@ -164,6 +180,14 @@ if __name__ == "__main__":
             threading.Thread(target=actions.telegram_contacts_background, daemon=True).start()
         except Exception as e:
             logging.error(f"[main] telegram_contacts_background start fail: {e}")
+
+    try:
+        func = actions.ACTION_MAP.get("_resume_screen_watch_internal")
+        resumed = func({}) if func else ""
+        if resumed:
+            logging.info(f"[main] Screen watch resume ho gaya: {resumed}")
+    except Exception as e:
+        logging.error(f"[main] Screen watch resume karte waqt error: {e}")
 
     if "--text" in sys.argv:
         text_mode()

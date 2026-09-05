@@ -44,7 +44,6 @@ Requirement: vision_skill.py jaisa hi - OPENROUTER_API_KEY + optionally
 .env mein VISION_MODEL.
 """
 
-import base64
 import json
 import os
 import re
@@ -99,12 +98,7 @@ def _extract_json(text: str) -> dict | None:
 
 def _decide_next_step(goal: str, history: list, recovery_hint: str = "") -> dict | None:
     capture = screen_capture.capture_for_vision()
-    with open(capture["path"], "rb") as f:
-        image_b64 = base64.b64encode(f.read()).decode()
-    try:
-        os.remove(capture["path"])
-    except OSError:
-        pass
+    image_b64 = capture["image_b64"]
 
     history_text = "\n".join(history) if history else "(abhi tak koi step nahi liya)"
     recovery_text = (
@@ -163,7 +157,7 @@ YA {{"status": "stuck", "reason": "..."}}"""
                                 {"type": "text", "text": prompt},
                                 {
                                     "type": "image_url",
-                                    "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                                    "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
                                 },
                             ],
                         }

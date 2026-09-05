@@ -199,30 +199,8 @@ addMessage('Jarvis', 'Namaste! Phone se laptop control karne ke liye ready hoon.
 _pending_destructive = {"action": None, "params": None}
 
 
-def handle_command(user_text: str) -> str:
-    """LLM se action(s) decide karke execute karta hai - GUI jaisa hi logic.
-    Destructive actions (shutdown/restart/delete/etc) phone se allowed hain,
-    lekin ek PIN confirm karna padta hai - safety ke liye taaki koi aur
-    same-WiFi device galti se ya jaan-boojh kar laptop shutdown na kar de."""
+def _process_new_command(user_text: str) -> str:
     global _pending_destructive
-
-    if _pending_destructive["action"]:
-        entered = user_text.strip()
-        action_name = _pending_destructive["action"]
-        params = _pending_destructive["params"]
-        _pending_destructive = {"action": None, "params": None}
-
-        if entered != config.PHONE_PIN:
-            return "PIN galat tha, action cancel kar diya."
-
-        func = actions.ACTION_MAP.get(action_name)
-        if not func:
-            result = f"'{action_name}' command samajh nahi aaya."
-            brain.save_action_results([result])
-            return result
-        result = actions.run_action_with_retry(func, params, action_name)
-        brain.save_action_results([result])
-        return result
 
     action_list = brain.ask_llm(user_text)
     results = []
@@ -248,7 +226,43 @@ def handle_command(user_text: str) -> str:
         results.append(result)
 
     brain.save_action_results(results)
-    return " ".join(results)
+    return " ".join(r for r in results if r)
+
+
+def handle_command(user_text: str) -> str:
+    """LLM se action(s) decide karke execute karta hai - GUI jaisa hi logic.
+    Destructive actions (shutdown/restart/delete/etc) phone se allowed hain,
+    lekin ek PIN confirm karna padta hai - safety ke liye taaki koi aur
+    same-WiFi device galti se ya jaan-boojh kar laptop shutdown na kar de."""
+    global _pending_destructive
+
+    if _pending_destructive["action"]:
+        entered = user_text.strip()
+        action_name = _pending_destructive["action"]
+        params = _pending_destructive["params"]
+        _pending_destructive = {"action": None, "params": None}
+
+        if entered == config.PHONE_PIN:
+            func = actions.ACTION_MAP.get(action_name)
+            if not func:
+                result = f"'{action_name}' command samajh nahi aaya."
+                brain.save_action_results([result])
+                return result
+            result = actions.run_action_with_retry(func, params, action_name)
+            brain.save_action_results([result])
+            return result
+
+        # PROBLEM jo fix ho raha hai: pehle yahan PIN galat/na-diya jaane
+        # par seedha "PIN galat tha, cancel kar diya" bol ke ruk jaata tha -
+        # agar user ne actually ek bilkul NAYA command bhej diya tha (PIN
+        # maangne ke baad, jaise "autopilot band karo"), wo command kabhi
+        # process hi nahi hota tha, chup-chaap nigal liya jaata tha. Ab
+        # purana destructive action safely cancel ho jaata hai (execute
+        # NAHI hota), lekin jo bhi naya text aaya hai use turant normal
+        # command ki tarah process kiya jaata hai.
+        return _process_new_command(user_text)
+
+    return _process_new_command(user_text)
 
 
 @app.route("/")
@@ -298,4 +312,16 @@ if __name__ == "__main__":
     print(f"   http://{local_ip}:5000")
     print("=" * 50)
     threading.Thread(target=_telegram_contacts_background, daemon=True).start()
+
+    # Agar server pichli baar band hone se pehle koi screen-watch chala
+    # raha tha (aur wo expire nahi hua), khud-ba-khud resume kar do -
+    # user ko dobara "screen dekho" bolna nahi padega.
+    try:
+        func = actions.ACTION_MAP.get("_resume_screen_watch_internal")
+        resumed = func({}) if func else ""
+        if resumed:
+            print(f"[Screen watch auto-resumed] {resumed}")
+    except Exception as e:
+        print(f"[Screen watch resume error] {e}")
+
     app.run(host="0.0.0.0", port=5000, debug=False)

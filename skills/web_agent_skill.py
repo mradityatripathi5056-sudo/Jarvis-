@@ -244,6 +244,9 @@ def web_do_task(params: dict) -> str:
         # generous rakha hai.
         return run_in_browser_thread(lambda: _web_do_task_impl(url, goal), timeout=180)
     except Exception as e:
+        import logging
+        import traceback
+        logging.error(f"[web_agent_skill] web_do_task failed: {e}\n{traceback.format_exc()}")
         return f"Task poora nahi ho saka: {e}"
 
 

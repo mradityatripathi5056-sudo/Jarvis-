@@ -43,12 +43,32 @@ _current_index = 0
 
 
 def _worker_loop():
+    # DEFENSIVE FIX: agar kisi wajah se is thread mein koi asyncio event
+    # loop "current" set ho gaya ho (chahe kahin se bhi aaya ho), Playwright
+    # ki sync API "Sync API inside the asyncio loop" error de deti hai.
+    # Ek naye thread mein normally koi loop set nahi hota, lekin ye explicit
+    # reset safety ke liye hai taaki chahe kuch bhi ho jaaye, is DEDICATED
+    # thread mein Playwright hamesha bina rukawat ke chal sake.
+    import asyncio
+    try:
+        asyncio.set_event_loop(None)
+    except Exception:
+        pass
+
     while True:
         fn, result_queue = _job_queue.get()
         try:
             result = fn()
             result_queue.put(("ok", result))
         except Exception as e:  # noqa: BLE001 - error ko caller tak wapas bhejna hai
+            import logging
+            import traceback
+            # Pehle sirf error object wapas jaata tha, poora traceback kahin
+            # log nahi hota tha - agla error aaye to root-cause dhoondna
+            # mushkil tha. Ab jarvis.log mein pura traceback bhi likha
+            # jaayega (user ko sirf clean message dikhta hai, log mein
+            # detail rehta hai).
+            logging.error(f"[browser_worker] job failed: {e}\n{traceback.format_exc()}")
             result_queue.put(("error", e))
 
 

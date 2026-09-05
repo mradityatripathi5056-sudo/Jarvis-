@@ -36,7 +36,6 @@ Sensitive buttons (payment confirm, delete, send-money) pe use karte
 waqt result screenshot/status khud bhi ek baar check kar lena.
 """
 
-import base64
 import json
 import os
 import re
@@ -66,12 +65,7 @@ def _extract_json(text: str) -> dict | None:
 def _ask_vision_for_position(description: str, capture: dict):
     """Vision model se ek baar puchta hai description ki position
     (percentage mein). Returns (x_pct, y_pct) | None, raw_reply_or_error."""
-    with open(capture["path"], "rb") as f:
-        image_b64 = base64.b64encode(f.read()).decode()
-    try:
-        os.remove(capture["path"])
-    except OSError:
-        pass
+    image_b64 = capture["image_b64"]
 
     prompt = (
         f'Ye current computer screen ka screenshot hai (agar multiple monitors '
@@ -100,7 +94,7 @@ def _ask_vision_for_position(description: str, capture: dict):
                                 {"type": "text", "text": prompt},
                                 {
                                     "type": "image_url",
-                                    "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                                    "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
                                 },
                             ],
                         }
@@ -142,10 +136,6 @@ def _locate_on_screen(description: str):
         capture["offset_x"], capture["offset_y"],
     )
     if cached:
-        try:
-            os.remove(capture["path"])
-        except OSError:
-            pass
         x_pct, y_pct = cached
         return screen_capture.percent_to_absolute(x_pct, y_pct, capture), "(yaad rakhi hui jagah se, vision call nahi lagi)"
 

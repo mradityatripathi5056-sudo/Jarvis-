@@ -36,13 +36,13 @@ optionally .env mein VISION_MODEL (vision-capable model, jaise
 google/gemini-2.5-flash).
 """
 
-import base64
 import json
 import os
 import threading
 import time
 
 import requests
+from json_utils import safe_json_load, safe_json_save
 import config
 import actions
 
@@ -51,6 +51,72 @@ _stop_event = threading.Event()
 _watch_lock = threading.Lock()
 _status = {"running": False, "condition": None, "started_at": None, "checks": 0}
 
+WATCH_STATE_FILE = "jarvis_watch_state.json"
+
+
+def _save_watch_state(condition: str, follow_up: str, interval: int, max_minutes: int):
+    """PROBLEM jo fix ho raha hai: agar app kabhi band ho jaaye (crash ya
+    khud user close kare) jab watch chal raha ho, to ye state sirf memory
+    mein tha - agli baar app khulne pe user ko phir se 'screen dekho'
+    bolna padta tha. Ab ye disk pe save hota hai, taaki startup pe
+    resume_watch_if_needed() khud-ba-khud wapas chalu kar sake."""
+    safe_json_save(WATCH_STATE_FILE, {
+        "condition": condition,
+        "follow_up": follow_up,
+        "interval": interval,
+        "max_minutes": max_minutes,
+        "started_at": time.time(),
+    })
+
+
+def _clear_watch_state():
+    safe_json_save(WATCH_STATE_FILE, {})
+
+
+def resume_watch_if_needed() -> str:
+    """App startup pe (gui.py/server.py/main.py se) call karo. Priority:
+    1) Agar pichli baar koi watch active tha aur uska max_minutes abhi
+       tak khatam nahi hua, use khud-ba-khud (baaki bache hue time ke
+       saath) resume kar deta hai.
+    2) Warna, agar .env mein DEFAULT_WATCH_CONDITION set hai (user ne
+       khud ek baar set kiya hai ki 'Jarvis khulte hi HAMESHA ye
+       condition watch karo'), to wahi shuru kar deta hai - is tarike se
+       user ko har baar 'screen dekho' bolna nahi padta, ek baar .env
+       mein set karo aur hamesha automatic on rahega.
+    Agar dono mein se kuch nahi, khaali string deta hai (kuch nahi hota)."""
+    state = safe_json_load(WATCH_STATE_FILE, {})
+    condition = state.get("condition")
+    if condition:
+        elapsed_minutes = (time.time() - state.get("started_at", 0)) / 60
+        remaining_minutes = state.get("max_minutes", 30) - elapsed_minutes
+        if remaining_minutes > 0.5:
+            return start_screen_watch({
+                "condition": condition,
+                "follow_up": state.get("follow_up", ""),
+                "interval": state.get("interval", 8),
+                "max_minutes": remaining_minutes,
+            }) + " (pichli baar band hone se pehle chal raha tha, khud-ba-khud resume kar diya.)"
+        _clear_watch_state()
+
+    default_condition = os.getenv("DEFAULT_WATCH_CONDITION", "").strip()
+    if default_condition:
+        try:
+            default_interval = int(os.getenv("DEFAULT_WATCH_INTERVAL", "8") or 8)
+        except ValueError:
+            default_interval = 8
+        try:
+            default_max_minutes = int(os.getenv("DEFAULT_WATCH_MAX_MINUTES", "120") or 120)
+        except ValueError:
+            default_max_minutes = 120
+        return start_screen_watch({
+            "condition": default_condition,
+            "follow_up": os.getenv("DEFAULT_WATCH_FOLLOWUP", "").strip(),
+            "interval": default_interval,
+            "max_minutes": default_max_minutes,
+        }) + " (.env mein DEFAULT_WATCH_CONDITION set hai isliye khud-ba-khud shuru kar diya.)"
+
+    return ""
+
 
 def _vision_model() -> str:
     value = os.getenv("VISION_MODEL", "").strip()
@@ -58,17 +124,13 @@ def _vision_model() -> str:
 
 
 def _check_condition_on_screen(condition: str):
-    """Screenshot lekar (multi-monitor aware) vision model se pucchta hai
-    condition true hui ya nahi. Returns (is_true: bool, raw_reply: str)."""
+    """Screenshot lekar (multi-monitor aware, resized/compressed for speed)
+    vision model se pucchta hai condition true hui ya nahi. Returns
+    (is_true: bool, raw_reply: str)."""
     import screen_capture
 
     capture = screen_capture.capture_for_vision()
-    with open(capture["path"], "rb") as f:
-        image_b64 = base64.b64encode(f.read()).decode()
-    try:
-        os.remove(capture["path"])
-    except OSError:
-        pass
+    image_b64 = capture["image_b64"]
 
     prompt = (
         f'Ye current screen ka screenshot hai. Condition: "{condition}". '
@@ -92,7 +154,7 @@ def _check_condition_on_screen(condition: str):
                             {"type": "text", "text": prompt},
                             {
                                 "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
                             },
                         ],
                     }
@@ -174,6 +236,7 @@ def _watch_loop(condition: str, follow_up: str, interval: int, max_checks: int):
             speak(f"Watch timeout ho gaya, '{condition}' condition milte hue nahi dikhi.")
 
     _status["running"] = False
+    _clear_watch_state()
 
 
 def start_screen_watch(params: dict) -> str:
@@ -206,6 +269,7 @@ def start_screen_watch(params: dict) -> str:
             target=_watch_loop, args=(condition, follow_up, interval, max_checks), daemon=True
         )
         _watch_thread.start()
+        _save_watch_state(condition, follow_up, interval, max_minutes)
 
     msg = (
         f"Theek hai, screen watch shuru kar diya - condition: '{condition}' "
@@ -221,6 +285,7 @@ def stop_screen_watch(params: dict) -> str:
         return "Koi watch chal hi nahi raha."
     _stop_event.set()
     _status["running"] = False
+    _clear_watch_state()
     return "Screen watch band kar diya."
 
 
@@ -235,6 +300,14 @@ ACTIONS = {
     "start_screen_watch": start_screen_watch,
     "stop_screen_watch": stop_screen_watch,
     "screen_watch_status": screen_watch_status,
+    # NOTE: LLM ke liye NAHI hai (isiliye DOCS mein documented nahi hai) -
+    # sirf app-startup code (gui.py/server.py/main.py) ke liye, taaki wo
+    # `actions.ACTION_MAP` ke through hi is SAME skill-loader-loaded module
+    # instance ko call kare, na ki ek fresh `import skills.screen_watch_skill`
+    # se ek BILKUL ALAG module-copy (jiske globals ACTUAL chal rahe thread
+    # se connected hi nahi honge - bilkul wahi bug jo stop_autopilot/
+    # stop_screen_watch ke liye upar fix kiya gaya tha).
+    "_resume_screen_watch_internal": lambda params: resume_watch_if_needed(),
 }
 
 DOCS = """
